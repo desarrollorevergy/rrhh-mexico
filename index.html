@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Parte de horas · Revergy</title>
+<style>
+  :root {
+    --fondo: #101418;
+    --superficie: #1a2027;
+    --texto: #e6eaee;
+    --texto-tenue: #8b97a3;
+    --acento: #3d9970;
+    --borde: #2a323b;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--fondo);
+    color: var(--texto);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+  }
+
+  #marco {
+    position: fixed;
+    inset: 0;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  #app {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+    opacity: 0;
+    transition: opacity .35s ease;
+  }
+
+  #app.visible { opacity: 1; }
+
+  /* Capas de estado */
+  .capa {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    padding: 2rem calc(2rem + env(safe-area-inset-left, 0px));
+    text-align: center;
+    background: var(--fondo);
+    z-index: 10;
+  }
+
+  .capa[hidden] { display: none; }
+
+  .marca {
+    font-size: .95rem;
+    letter-spacing: .04em;
+    color: var(--texto-tenue);
+  }
+
+  .pulso {
+    width: 2.75rem;
+    height: 2.75rem;
+    border: 2px solid var(--borde);
+    border-top-color: var(--acento);
+    border-radius: 50%;
+    animation: giro .9s linear infinite;
+  }
+
+  @keyframes giro { to { transform: rotate(360deg); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pulso { animation-duration: 3s; }
+    #app { transition: none; }
+  }
+
+  /* Capa de error */
+  #fallo .titulo {
+    font-size: 1.35rem;
+    font-weight: 600;
+    margin: 0;
+    max-width: 30ch;
+    line-height: 1.35;
+  }
+
+  #fallo p {
+    margin: 0;
+    max-width: 46ch;
+    line-height: 1.6;
+    color: var(--texto-tenue);
+    font-size: .95rem;
+  }
+
+  .boton {
+    display: inline-block;
+    background: var(--acento);
+    color: #08130d;
+    font-weight: 600;
+    font-size: 1rem;
+    text-decoration: none;
+    padding: .8rem 1.6rem;
+    border-radius: 6px;
+    border: 0;
+    cursor: pointer;
+  }
+
+  .boton:hover { background: #47ad81; }
+
+  .boton:focus-visible {
+    outline: 2px solid var(--texto);
+    outline-offset: 3px;
+  }
+
+  /* Salida de emergencia, siempre disponible sobre el iframe */
+  #escape {
+    position: fixed;
+    right: calc(.75rem + env(safe-area-inset-right, 0px));
+    bottom: calc(.75rem + env(safe-area-inset-bottom, 0px));
+    z-index: 20;
+    background: var(--superficie);
+    color: var(--texto-tenue);
+    border: 1px solid var(--borde);
+    border-radius: 999px;
+    padding: .45rem .9rem;
+    font-size: .8rem;
+    text-decoration: none;
+  }
+
+  #escape:hover { color: var(--texto); }
+
+  #escape:focus-visible {
+    outline: 2px solid var(--acento);
+    outline-offset: 2px;
+  }
+</style>
+</head>
+<body>
+
+<div id="marco">
+  <iframe
+    id="app"
+    title="Parte de horas"
+    allow="geolocation; camera; microphone; clipboard-write"
+    referrerpolicy="origin"></iframe>
+</div>
+
+<a id="escape" href="#" target="_blank" rel="noopener">Abrir en ventana nueva</a>
+
+<div class="capa" id="cargando">
+  <div class="pulso" role="status" aria-label="Cargando la aplicación"></div>
+  <span class="marca">Parte de horas · Revergy</span>
+</div>
+
+<div class="capa" id="fallo" hidden>
+  <h1 class="titulo">La aplicación no se ha podido mostrar aquí</h1>
+  <p>
+    Suele ocurrir cuando el navegador bloquea las cookies de terceros o
+    la sesión de Microsoft ha caducado. Ábrela en una ventana nueva para continuar.
+  </p>
+  <a class="boton" id="botonAbrir" href="#" target="_blank" rel="noopener">Abrir aplicación</a>
+</div>
+
+<script>
+(function () {
+  var URL_APP = "https://apps.powerapps.com/play/e/default-4fe87a29-74e1-41c5-bda3-6f4298f1fc78/a/5d47ec16-7ed5-410a-943f-45928cc2c19b?tenantId=4fe87a29-74e1-41c5-bda3-6f4298f1fc78&source=iframe";
+
+  var ESPERA_MS = 20000; // margen para el arranque del reproductor de Power Apps
+
+  var iframe    = document.getElementById("app");
+  var cargando  = document.getElementById("cargando");
+  var fallo     = document.getElementById("fallo");
+
+  document.getElementById("botonAbrir").href = URL_APP;
+  document.getElementById("escape").href     = URL_APP;
+
+  var resuelto = false;
+
+  function mostrarApp() {
+    if (resuelto) return;
+    resuelto = true;
+    clearTimeout(temporizador);
+    cargando.hidden = true;
+    iframe.classList.add("visible");
+  }
+
+  function mostrarFallo() {
+    if (resuelto) return;
+    resuelto = true;
+    cargando.hidden = true;
+    fallo.hidden = false;
+  }
+
+  var temporizador = setTimeout(mostrarFallo, ESPERA_MS);
+
+  // El evento load dispara también cuando el marco queda bloqueado, así que
+  // damos un margen extra antes de dar por buena la carga.
+  iframe.addEventListener("load", function () {
+    setTimeout(mostrarApp, 1200);
+  });
+
+  iframe.addEventListener("error", mostrarFallo);
+
+  iframe.src = URL_APP;
+})();
+</script>
+
+</body>
+</html>
