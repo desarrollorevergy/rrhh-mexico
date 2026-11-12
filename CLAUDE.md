@@ -202,7 +202,6 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 8. **Rol SuperAdmin:** existe en la Power App (lista `MatrizRoles`) y no en la tabla de roles de este archivo.
 9. **Identificación del empleado:** ¿se enlaza el usuario de Entra ID con la ficha por correo (como la Power App) o por ID de objeto de Entra?
 10. **Redondeo a medias horas:** el prototipo `parte-horas` redondea las horas del día a .0/.5. ¿Es una regla real?
-11. **Región de los datos:** el App Service está en West US 3 (antes se preveía Mexico Central). ¿La base de datos irá en la misma región? Implica que los datos personales se alojan fuera de México.
 
 Cuando se resuelva una duda, muévela a la sección correspondiente como regla.
 
@@ -216,6 +215,8 @@ Se manejan datos personales (CURP, RFC, NSS, salario, incapacidades). Aplica la 
 ## Decisiones tomadas (registro)
 
 - Hosting en **App Service** (no Static Web App). La SWA anterior se eliminó.
+- Región **West US 3** (confirmada; antes se preveía Mexico Central). La base de datos irá en la misma región que la app.
+- El repositorio de GitHub es **privado**.
 - Base de datos **Azure SQL**, no listas de SharePoint ni Supabase.
 - Front con framework (React) por la complejidad: 11 módulos y vistas por rol.
 - Las partes públicas (buzón anónimo, portal de postulantes) irán separadas de la app principal; se decidirá cómo al llegar a esos módulos.
