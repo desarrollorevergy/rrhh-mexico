@@ -35,7 +35,7 @@ Portal web de Recursos Humanos para Revergy México. Sustituye a una Power App c
 
 ### Fases
 
-- **Fase 0 (actual):** base del proyecto: estructura, carcasa visual, autenticación simulada en local, base de datos local, motor de aprobaciones genérico.
+- **Fase 0 (actual):** base del proyecto: estructura, carcasa visual (hecha y en producción), autenticación simulada en local, base de datos local, motor de aprobaciones genérico.
 - **Fase 1:** Parte de Horas + Ficha de Empleado básica (lo mínimo que necesita el parte de horas). Migrar datos de la Power App.
 - Después, por dependencias: Vacaciones e Incremento → Bajas → Perfiles + Contratación + CVs → Onboarding → Nómina → Buzón.
 
@@ -60,7 +60,9 @@ Una sola aplicación: Express sirve el front compilado (`web/dist`) y la API baj
 - El paquete desplegado lleva solo: `package.json` raíz, `api/package.json`, `api/dist`, `api/node_modules` (sin devDependencies) y `web/dist`.
 - Orden de rutas en `api/src/app.ts`: rutas `/api` → 404 JSON para cualquier `/api/*` inexistente → archivos de `web/dist` → `index.html` para el resto (lo resuelve el router del front). Con Express 5 el comodín se escribe `/{*splat}`, no `*`.
 - El `build` de la raíz instala `web/` y `api/` antes de compilar, porque el workflow que genera el Centro de implementación de Azure solo ejecuta `npm install`, `npm run build` y `npm run test` en la raíz.
-- El workflow de GitHub Actions **aún no está creado**. Cuando exista, queda pendiente recortar el paquete (hoy subiría también las devDependencies).
+- Workflow: `.github/workflows/main_rrhh-mexico.yml`, generado por el Centro de implementación de Azure. Se ejecuta en cada push a `main` y despliega en producción. Se autentica con un **perfil de publicación** guardado como secreto en GitHub (autenticación básica).
+- **Primer despliegue hecho el 2026-11-12** (carcasa visual, sin inicio de sesión ni base de datos).
+- Pendiente: recortar el paquete (hoy sube el repo entero con devDependencies, fuentes y `docs/`) y valorar pasar a identidad administrada en lugar del perfil de publicación.
 
 ### Estructura del repo
 
