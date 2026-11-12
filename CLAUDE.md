@@ -192,12 +192,14 @@ Es el módulo que se presentará como terminado. Debe quedar **igual que la app 
 - **Fichaje olvidado:** lo corrige el supervisor (o el colaborador si le rechazan el día).
 - **Festivos:** calendario en la tabla `holidays`, mantenido por RRHH desde la app. Ya no los marca el supervisor a mano.
 - **GPS:** no se captura.
+- **Catálogo de analíticas:** lo mantiene **Controlling**. La carga inicial va por migración; falta la pantalla para que Controlling añada, renombre y desactive analíticas.
 - **Cambios por arquitectura:** el supervisor ve solo a su equipo (`supervisor_id`), no por departamento; RRHH solo ve semanas aprobadas.
 
 ### Etapas
 
 1. Datos y catálogos — **hecha**: catálogo de 68 analíticas, administración de empleados y festivos para RRHH (`/empleados`, tarjeta 07 visible solo para RRHH; API en `api/src/admin/`).
-2. Cálculo de horas (funciones puras con pruebas).
+   Pendiente de esta etapa: pantalla de mantenimiento de analíticas para Controlling.
+2. Cálculo de horas — **hecha**: `api/src/timesheet/hours.ts` (funciones puras, en minutos completos; `calculateWeek` da el consolidado).
 3. Fichaje con conexión (aquí se crean las tablas de jornadas).
 4. Mi semana.
 5. Supervisión (usa el motor de aprobaciones).
@@ -265,8 +267,6 @@ Las dudas 1 a 7 y la 10 (sábado, umbral de extra, festivos, fichaje olvidado, u
 8. **Rol SuperAdmin:** existe en la Power App (lista `MatrizRoles`) y no en la tabla de roles de este archivo.
 9. **Identificación del empleado:** ¿se enlaza el usuario de Entra ID con la ficha por correo (como la Power App) o por ID de objeto de Entra?
 11. **Aprobar la propia solicitud:** el motor de aprobaciones lo impide (por ejemplo, alguien de RRHH no puede dar la aprobación de RRHH a su propia solicitud). Es una regla asumida, no está en el documento. ¿Es correcta? Si lo es, ¿quién aprueba en ese caso?
-
-12. **Catálogo de analíticas:** ¿quién lo mantiene? Hoy se carga por migración (`db/migrations/004_project_catalog.sql`); no hay pantalla para añadir o desactivar proyectos.
 
 Cuando se resuelva una duda, muévela a la sección correspondiente como regla.
 
