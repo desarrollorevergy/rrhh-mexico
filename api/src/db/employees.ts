@@ -25,6 +25,25 @@ export function supervisorLookupFromDb(config: DbConfig): SupervisorLookup {
   }
 }
 
+export interface EmployeeRef {
+  id: number
+  fullName: string
+}
+
+/** Ficha activa del usuario autenticado, enlazada por el correo. */
+export async function findEmployeeByEmail(config: DbConfig, email: string): Promise<EmployeeRef | undefined> {
+  if (!email) return undefined
+  const pool = await getPool(config)
+  const result = await pool
+    .request()
+    .input('email', sql.NVarChar(254), email)
+    .query<{ id: number; full_name: string }>(
+      'SELECT id, full_name FROM employees WHERE email = @email AND is_active = 1',
+    )
+  const row = result.recordset[0]
+  return row ? { id: row.id, fullName: row.full_name } : undefined
+}
+
 /** Comprueba que la base de datos responde. */
 export async function pingDb(config: DbConfig): Promise<void> {
   const pool = await getPool(config)

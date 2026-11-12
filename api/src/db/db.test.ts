@@ -1,11 +1,9 @@
-import { existsSync } from 'node:fs'
-import path from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { loadConfig } from '../config/env.js'
-import { supervisorLookupFromDb } from './employees.js'
+import { afterAll, describe, expect, it } from 'vitest'
+import { findEmployeeByEmail, supervisorLookupFromDb } from './employees.js'
 import { listMigrations, migrate } from './migrate.js'
 import { closePool, getPool } from './pool.js'
 import { seed } from './seed.js'
+import { testDb } from './testSetup.js'
 
 describe('listMigrations', () => {
   it('devuelve los scripts numerados en orden', () => {
@@ -15,21 +13,12 @@ describe('listMigrations', () => {
   })
 })
 
-// Pruebas contra la base de datos LOCAL de desarrollo. Necesitan api/.env con DB_SERVER;
-// donde no hay base de datos (por ejemplo en GitHub Actions) se omiten.
-const envFile = path.resolve(import.meta.dirname, '../../.env')
-if (!process.env.DB_SERVER && existsSync(envFile)) process.loadEnvFile(envFile)
-const config = loadConfig()
-const db = config.devAuth ? config.db : undefined
+// Contra la base de datos LOCAL de desarrollo; se omiten donde no hay (ver testSetup.ts).
+const db = testDb()
 
 describe.skipIf(!db)('Base de datos local', () => {
   const dbConfig = db!
   const user = (email: string) => ({ id: 'x', name: 'x', email, groups: [] })
-
-  beforeAll(async () => {
-    await migrate(dbConfig)
-    await seed(dbConfig)
-  })
 
   afterAll(async () => {
     await closePool()
@@ -63,5 +52,10 @@ describe.skipIf(!db)('Base de datos local', () => {
     expect(await isSupervisor(user('colaborador@example.test'))).toBe(false)
     expect(await isSupervisor(user('no-existe@example.test'))).toBe(false)
     expect(await isSupervisor(user(''))).toBe(false)
+  })
+
+  it('encuentra la ficha del usuario por su correo', async () => {
+    expect((await findEmployeeByEmail(dbConfig, 'rrhh@example.test'))?.fullName).toBe('RRHH de Prueba')
+    expect(await findEmployeeByEmail(dbConfig, 'no-existe@example.test')).toBeUndefined()
   })
 })

@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import express, { type ErrorRequestHandler, type Express } from 'express'
+import { approvalsRouter } from './approvals/routes.js'
+import { createApprovalService } from './approvals/service.js'
 import { DEV_USERS, devIsSupervisor } from './auth/devUsers.js'
 import { authenticate, devAuth, getAuth, type SupervisorLookup } from './auth/middleware.js'
 import { loadConfig, type AppConfig } from './config/env.js'
@@ -72,6 +74,12 @@ export function createApp(options: AppOptions = {}): Express {
       res.status(503).json({ status: 'error' })
     }
   })
+
+  // Motor de aprobaciones. Necesita la base de datos.
+  if (config.db) {
+    const approvals = createApprovalService({ db: config.db, includeDemo: config.devAuth })
+    app.use('/api/approvals', approvalsRouter(config, config.db, approvals))
+  }
 
   // Cualquier /api que no exista responde 404 en JSON, nunca el index.html del front.
   app.use('/api', (_req, res) => {

@@ -30,8 +30,17 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
+export function apiGet<T>(path: string): Promise<T> {
+  return apiRequest<T>('GET', path)
+}
+
+export function apiPost<T>(path: string, body: unknown = {}): Promise<T> {
+  return apiRequest<T>('POST', path, body)
+}
+
+async function apiRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
 
   // En producción este bloque no existe: la identidad la pone App Service.
   if (import.meta.env.DEV) {
@@ -39,7 +48,11 @@ export async function apiGet<T>(path: string): Promise<T> {
     if (devUser) headers['X-Dev-User'] = devUser
   }
 
-  const res = await fetch(path, { headers })
+  const res = await fetch(path, {
+    method,
+    headers,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
   if (!res.ok) {
     let message = `Error ${res.status}`
     try {

@@ -160,6 +160,17 @@ Los módulos 01, 02, 03, 08 y 10 comparten el patrón "solicitud → uno o vario
 - Historial completo: quién, cuándo, qué decisión y **motivo** (obligatorio al rechazar).
 - Punto de enganche para notificaciones (el envío de correo real llegará después).
 
+### Cómo está implementado (`api/src/approvals/`)
+
+- `stateMachine.ts`: reglas como **funciones puras** (aprobar, rechazar con motivo, reenviar, cancelar, a quién le toca decidir).
+- `chains.ts`: cadena por tipo de solicitud. Registrados: `timesheet_week` (supervisor; admite reenvío) y `hiring_request` (RRHH → Dirección; rechazo definitivo). Cada módulo registra el suyo al construirse. El tipo `demo` solo existe en local.
+- Un paso puede tener **varios aprobadores en paralelo** (todos deben aprobar): lo necesita Bajas (Controlling y Almacén).
+- `service.ts`: guarda estado e historial en una transacción, con la fila bloqueada. Tablas `approval_requests` y `approval_actions` (`db/migrations/002_approvals.sql`). La solicitud guarda una copia de su cadena.
+- `routes.ts`: `/api/approvals` → `pending`, `mine`, `:id`, `:id/approve`, `:id/reject`, `:id/resubmit`, `:id/cancel`. Solo se monta si hay base de datos.
+- `notifications.ts`: punto de enganche; hoy solo escribe en el registro, sin datos personales.
+- **Regla asumida, a confirmar:** nadie decide sobre su propia solicitud aunque tenga el rol aprobador.
+- Página de prueba solo en local: `/dev/aprobaciones`.
+
 ## Módulo 01 — Parte de Horas (Fase 1)
 
 ### Referencia existente
