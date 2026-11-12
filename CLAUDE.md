@@ -103,6 +103,14 @@ cd api; npm test
 - **Toda la autorización se comprueba en la API**, nunca solo en el front. El front solo oculta lo que no corresponde.
 - Un colaborador solo puede ver y modificar **sus propios** datos. Un supervisor, los de **su equipo**.
 
+### Cómo está implementado
+
+- **Producción:** Easy Auth está **activo** desde el 2026-11-12 (proveedor Microsoft, inquilino único, "Requerir autenticación", no autenticados → redirección 302). El registro de aplicación `rrhh-mexico` tiene un **secreto de cliente que caduca**: hay que renovarlo antes o el inicio de sesión deja de funcionar.
+- **API** (`api/src/auth/`): `principal.ts` decodifica la cabecera; `roles.ts` calcula los roles; `middleware.ts` tiene `authenticate` (401), `requireRole` (403) y `getAuth(res)` para leer el usuario en una ruta. Todo `/api` exige usuario salvo `/api/health`. `GET /api/me` devuelve usuario y roles.
+- **Local:** `DEV_AUTH=true` en `api/.env` activa `devAuth`, que fabrica la cabecera real a partir del usuario de prueba elegido (cabecera `X-Dev-User`). Usuarios ficticios en `api/src/auth/devUsers.ts`. La API **no arranca** con `DEV_AUTH=true` si detecta producción o Azure (`WEBSITE_SITE_NAME`).
+- **Front** (`web/src/auth/`): `AuthProvider` carga `/api/me` antes de mostrar la app; `useAuth()` da el usuario. El selector `web/src/dev/DevUserSwitcher.tsx` solo se carga con `import.meta.env.DEV`.
+- **Pendiente:** el rol Supervisor "por datos" es provisional (en local sale de `devUsers.ts`; en producción nadie lo es) hasta que exista la tabla de empleados. En producción todos son solo Colaborador hasta que se creen los grupos de Entra ID, el registro de aplicación emita el claim `groups` y se definan las variables `ENTRA_GROUP_*` en el App Service. El menú de módulos aún no se filtra por rol.
+
 ### Roles
 
 | Rol | Cómo se determina |

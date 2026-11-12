@@ -1,6 +1,9 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import express, { type Express } from 'express'
+import express, { type ErrorRequestHandler, type Express } from 'express'
+import { DEV_USERS, devIsSupervisor } from './auth/devUsers.js'
+import { authenticate, devAuth, getAuth, type SupervisorLookup } from './auth/middleware.js'
+import { loadConfig, type AppConfig } from './config/env.js'
 
 // Front compilado. La ruta vale igual en desarrollo (api/src, con tsx) y compilado
 // (api/dist): los dos están a dos niveles de la raíz del repo.
@@ -9,18 +12,44 @@ const DEFAULT_WEB_DIST = path.resolve(import.meta.dirname, '../../web/dist')
 export interface AppOptions {
   /** Carpeta del front compilado. Solo se cambia en las pruebas. */
   webDist?: string
+  /** Configuración. Por defecto se lee de las variables de entorno. */
+  config?: AppConfig
+  /** Cómo saber si un usuario tiene gente a su cargo. */
+  isSupervisor?: SupervisorLookup
 }
+
+// Provisional hasta que exista la tabla de empleados (paso 3): nadie es supervisor.
+const noSupervisors: SupervisorLookup = async () => false
 
 // Se separa de server.ts para poder probar la app sin abrir un puerto.
 export function createApp(options: AppOptions = {}): Express {
   const webDist = options.webDist ?? DEFAULT_WEB_DIST
+  const config = options.config ?? loadConfig()
+  const isSupervisor = options.isSupervisor ?? (config.devAuth ? devIsSupervisor : noSupervisors)
   const app = express()
 
   app.disable('x-powered-by')
   app.use(express.json())
 
+  // Pública: la usa la comprobación de estado de App Service.
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok' })
+  })
+
+  // Solo en local: usuario simulado y lista de usuarios de prueba para el selector.
+  if (config.devAuth) {
+    app.use('/api', devAuth(config))
+    app.get('/api/dev/users', (_req, res) => {
+      res.json(DEV_USERS.map(({ id, name }) => ({ id, name })))
+    })
+  }
+
+  // A partir de aquí, toda la API exige un usuario autenticado.
+  app.use('/api', authenticate(config, isSupervisor))
+
+  app.get('/api/me', (_req, res) => {
+    const { user, roles } = getAuth(res)
+    res.json({ id: user.id, name: user.name, email: user.email, roles })
   })
 
   // Cualquier /api que no exista responde 404 en JSON, nunca el index.html del front.
@@ -49,6 +78,18 @@ export function createApp(options: AppOptions = {}): Express {
       res.sendFile(indexHtml)
     })
   }
+
+  // Errores no controlados: respuesta genérica. No se registra la petición ni datos personales.
+  const onError: ErrorRequestHandler = (err, _req, res, next) => {
+    if (res.headersSent) {
+      next(err)
+      return
+    }
+    const status = typeof err?.status === 'number' ? err.status : 500
+    if (status >= 500) console.error('Error no controlado:', err instanceof Error ? err.name : 'desconocido')
+    res.status(status).json({ error: status === 404 ? 'Recurso no encontrado' : 'Error interno' })
+  }
+  app.use(onError)
 
   return app
 }
