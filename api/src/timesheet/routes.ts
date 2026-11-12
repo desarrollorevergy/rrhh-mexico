@@ -1,14 +1,16 @@
 import { Router, type RequestHandler } from 'express'
 import { isValidDate } from '../admin/validation.js'
 import { getActor, requireEmployee, type Actor } from '../auth/employee.js'
+import { requireRole } from '../auth/middleware.js'
 import type { DbConfig } from '../config/env.js'
+import { parseReject, parseWeekAction, type TeamService } from './team.js'
 import { parseClockIn, parseComment, parseTimeZone, TimesheetError, type TimesheetService } from './service.js'
 
 /**
  * Rutas de /api/timesheet: el fichaje del propio colaborador. Van detrás de `authenticate`.
  * Cada uno solo ve y cambia sus jornadas: el empleado sale siempre de la sesión, nunca de la petición.
  */
-export function timesheetRouter(db: DbConfig, service: TimesheetService): Router {
+export function timesheetRouter(db: DbConfig, service: TimesheetService, team: TeamService): Router {
   const router = Router()
   router.use(requireEmployee(db))
 
@@ -60,6 +62,42 @@ export function timesheetRouter(db: DbConfig, service: TimesheetService): Router
       if (!Number.isInteger(id) || id <= 0) throw new TimesheetError(404, 'Jornada no encontrada')
       await service.setEntryComment(actor.employeeId, id, parseComment(req.body))
       return { ok: true }
+    }),
+  )
+
+  // Supervisión: solo quien tiene gente a su cargo, y solo sobre su equipo directo.
+  const supervisor = requireRole('supervisor')
+
+  router.get('/team/summary', supervisor, handle((actor) => team.summary(actor.employeeId)))
+
+  router.get(
+    '/team/week',
+    supervisor,
+    handle((actor, req) => {
+      const employeeId = Number(req.query.employeeId)
+      const date = req.query.date
+      if (!Number.isInteger(employeeId) || typeof date !== 'string' || !isValidDate(date)) {
+        throw new TimesheetError(400, 'Semana no válida')
+      }
+      return team.detail(actor.employeeId, employeeId, date)
+    }),
+  )
+
+  router.post(
+    '/team/week/approve',
+    supervisor,
+    handle((actor, req) => {
+      const { employeeId, weekStart } = parseWeekAction(req.body)
+      return team.approve(actor, employeeId, weekStart)
+    }),
+  )
+
+  router.post(
+    '/team/week/reject',
+    supervisor,
+    handle((actor, req) => {
+      const { employeeId, weekStart } = parseWeekAction(req.body)
+      return team.reject(actor, employeeId, weekStart, parseReject(req.body))
     }),
   )
 

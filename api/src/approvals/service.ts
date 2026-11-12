@@ -280,6 +280,20 @@ export function createApprovalService(options: ApprovalServiceOptions) {
       return id
     },
 
+    /** Última solicitud de un registro de un módulo (por ejemplo, la semana de un colaborador). */
+    async findLatest(type: string, entityId: string): Promise<{ id: number; status: ApprovalStatus } | undefined> {
+      const pool = await getPool(db)
+      const result = await pool
+        .request()
+        .input('type', sql.NVarChar(50), type)
+        .input('entityId', sql.NVarChar(50), entityId)
+        .query<{ id: number; status: ApprovalStatus }>(`
+          SELECT TOP 1 id, status FROM approval_requests
+          WHERE request_type = @type AND entity_id = @entityId
+          ORDER BY id DESC`)
+      return result.recordset[0]
+    },
+
     /** Aprueba o rechaza. Solo puede hacerlo quien tiene una decisión pendiente en el paso actual. */
     decide(id: number, actor: Actor, decision: 'approve' | 'reject', reason?: string): Promise<ApprovalRequestView> {
       return change(id, actor, async ({ state, relation, tx }) => {

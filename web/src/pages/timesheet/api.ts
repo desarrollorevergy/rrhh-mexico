@@ -22,6 +22,12 @@ export interface TimeEntry {
   clockIn: string
   clockOut: string | null
   status: 'pending' | 'approved' | 'rejected'
+  /** Motivo del supervisor si el día está rechazado. */
+  rejectReason: string | null
+  correctionSentAt: string | null
+  correctionNote: string | null
+  /** Las horas se corrigieron a mano. */
+  hoursEdited: boolean
 }
 
 export interface TodayView {
@@ -83,6 +89,51 @@ export function parseDateKey(date: string): Date {
   return new Date(`${date}T00:00:00`)
 }
 
+const DATE_FORMAT: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', year: 'numeric' }
+
+/** Día `days` después de una fecha AAAA-MM-DD. */
+export function addDaysKey(date: string, days: number): string {
+  const result = parseDateKey(date)
+  result.setDate(result.getDate() + days)
+  const month = String(result.getMonth() + 1).padStart(2, '0')
+  return `${result.getFullYear()}-${month}-${String(result.getDate()).padStart(2, '0')}`
+}
+
+/** Lunes de la semana de una fecha AAAA-MM-DD. */
+export function weekStartKey(date: string): string {
+  const weekday = parseDateKey(date).getDay() // 0 = domingo
+  return addDaysKey(date, weekday === 0 ? -6 : 1 - weekday)
+}
+
+/** «16/11/2026 al 22/11/2026», a partir del lunes. */
+export function weekLabel(weekStart: string): string {
+  const format = (date: string) => parseDateKey(date).toLocaleDateString('es-MX', DATE_FORMAT)
+  return `${format(weekStart)} al ${format(addDaysKey(weekStart, 6))}`
+}
+
+/** Una fila del consolidado de supervisión: la semana de un colaborador. */
+export interface TeamWeekSummary {
+  employeeId: number
+  employeeName: string
+  departmentName: string | null
+  weekStart: string
+  status: EntryStatus
+  /** El colaborador ya envió la corrección y espera nueva revisión. */
+  corrected: boolean
+  projects: string[]
+  totals: WeekView['totals']
+  holidayDays: number
+}
+
+export interface TeamWeekDetail extends WeekView {
+  employeeId: number
+  employeeName: string
+  departmentName: string | null
+  corrected: boolean
+  correctionSentAt: string | null
+  correctionNote: string | null
+}
+
 export const SHIFT_TYPES: { id: ShiftType; label: string }[] = [
   { id: 'activa', label: 'Activa' },
   { id: 'inactiva', label: 'Inactiva' },
@@ -113,4 +164,15 @@ export const timesheetApi = {
   week: (date: string) => apiGet<WeekView>(`/api/timesheet/week?date=${date}`),
   setEntryComment: (entryId: number, comment: string) =>
     apiPut<{ ok: true }>(`/api/timesheet/entries/${entryId}/comment`, { comment }),
+}
+
+/** Supervisión: semanas del equipo directo. */
+export const teamApi = {
+  summary: () => apiGet<TeamWeekSummary[]>('/api/timesheet/team/summary'),
+  week: (employeeId: number, weekStart: string) =>
+    apiGet<TeamWeekDetail>(`/api/timesheet/team/week?employeeId=${employeeId}&date=${weekStart}`),
+  approve: (employeeId: number, weekStart: string) =>
+    apiPost<TeamWeekDetail>('/api/timesheet/team/week/approve', { employeeId, weekStart }),
+  reject: (employeeId: number, weekStart: string, rejectedEntryIds: number[], reason: string) =>
+    apiPost<TeamWeekDetail>('/api/timesheet/team/week/reject', { employeeId, weekStart, rejectedEntryIds, reason }),
 }

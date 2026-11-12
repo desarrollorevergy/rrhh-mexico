@@ -11,6 +11,7 @@ import { loadConfig, type AppConfig } from './config/env.js'
 import { pingDb, supervisorLookupFromDb } from './db/employees.js'
 import { timesheetRouter } from './timesheet/routes.js'
 import { createTimesheetService } from './timesheet/service.js'
+import { createTeamService } from './timesheet/team.js'
 
 // Front compilado. La ruta vale igual en desarrollo (api/src, con tsx) y compilado
 // (api/dist): los dos están a dos niveles de la raíz del repo.
@@ -82,9 +83,17 @@ export function createApp(options: AppOptions = {}): Express {
 
   // Catálogos, administración y motor de aprobaciones. Necesitan la base de datos.
   if (config.db) {
-    app.use('/api', adminRouter(createAdminRepository(config.db)))
-    app.use('/api/timesheet', timesheetRouter(config.db, createTimesheetService({ db: config.db })))
     const approvals = createApprovalService({ db: config.db, includeDemo: config.devAuth })
+
+    app.use('/api', adminRouter(createAdminRepository(config.db)))
+    app.use(
+      '/api/timesheet',
+      timesheetRouter(
+        config.db,
+        createTimesheetService({ db: config.db }),
+        createTeamService({ db: config.db, approvals }),
+      ),
+    )
     app.use('/api/approvals', approvalsRouter(config, config.db, approvals))
   }
 

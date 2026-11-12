@@ -26,6 +26,13 @@ export interface TimeEntry {
   clockIn: Date
   clockOut: Date | null
   status: EntryStatus
+  /** Motivo del supervisor si el día está rechazado. */
+  rejectReason: string | null
+  /** Cuándo envió el colaborador la corrección de este día, y su nota. */
+  correctionSentAt: Date | null
+  correctionNote: string | null
+  /** Las horas se corrigieron a mano. */
+  hoursEdited: boolean
 }
 
 /** Una jornada con sus horas ya repartidas (en minutos). */
@@ -74,12 +81,54 @@ export class TimesheetError extends Error {
 const MAX_COMMENT = 1000
 const UNIQUE_VIOLATION = [2601, 2627]
 
+/** Columnas de una jornada, con los alias de `TimeEntry`. Requiere los alias de tabla `t` y `p`. */
+export const ENTRY_COLUMNS = `
+  t.id, CONVERT(char(10), t.work_date, 23) AS workDate, t.project_id AS projectId,
+  p.code AS projectCode, p.name AS projectName, t.shift_type AS shiftType,
+  t.per_diem AS perDiem, t.comment, t.clock_in AS clockIn, t.clock_out AS clockOut, t.status,
+  t.reject_reason AS rejectReason, t.correction_sent_at AS correctionSentAt,
+  t.correction_note AS correctionNote, t.hours_edited AS hoursEdited`
+
 const ENTRY_SELECT = `
-  SELECT t.id, CONVERT(char(10), t.work_date, 23) AS workDate, t.project_id AS projectId,
-         p.code AS projectCode, p.name AS projectName, t.shift_type AS shiftType,
-         t.per_diem AS perDiem, t.comment, t.clock_in AS clockIn, t.clock_out AS clockOut, t.status
+  SELECT ${ENTRY_COLUMNS}
   FROM time_entries AS t
   JOIN projects AS p ON p.id = t.project_id`
+
+/** Estado de una semana a partir del de sus días. null si no tiene jornadas. */
+export function weekStatusOf(entries: readonly { status: EntryStatus }[]): EntryStatus | null {
+  if (entries.length === 0) return null
+  if (entries.some((entry) => entry.status === 'rejected')) return 'rejected'
+  if (entries.some((entry) => entry.status === 'pending')) return 'pending'
+  return 'approved'
+}
+
+/** Jornadas con sus horas repartidas y el consolidado, a partir de las filas de la base de datos. */
+export function buildWeek(
+  entries: readonly TimeEntry[],
+  holidays: ReadonlySet<DateKey>,
+): { totals: WeekView['totals']; days: WeekDay[] } {
+  const hours = calculateWeek(
+    entries.map((entry) => ({
+      date: entry.workDate,
+      clockIn: entry.clockIn,
+      clockOut: entry.clockOut,
+      perDiem: entry.perDiem,
+    })),
+    holidays,
+  )
+  const hoursByDate = new Map(hours.days.map((day) => [day.date, day]))
+  const { days: _days, ...totals } = hours
+
+  const days = [...entries]
+    .sort((a, b) => a.workDate.localeCompare(b.workDate))
+    .flatMap((entry) => {
+      const day = hoursByDate.get(entry.workDate)
+      if (!day) return []
+      const { date: _date, ...breakdown } = day
+      return [{ ...entry, ...breakdown }]
+    })
+  return { totals, days }
+}
 
 function cleanComment(value: unknown): string | null {
   if (value === null || value === undefined) return null
@@ -147,14 +196,6 @@ export function createTimesheetService(options: TimesheetServiceOptions) {
     return { ...active, entry: entries.get(active.workDate) ?? null }
   }
 
-  /** Estado de una semana a partir del de sus días. */
-  function weekStatus(entries: TimeEntry[]): EntryStatus | null {
-    if (entries.length === 0) return null
-    if (entries.some((entry) => entry.status === 'rejected')) return 'rejected'
-    if (entries.some((entry) => entry.status === 'pending')) return 'pending'
-    return 'approved'
-  }
-
   return {
     today,
 
@@ -183,29 +224,11 @@ export function createTimesheetService(options: TimesheetServiceOptions) {
             FROM holidays WHERE holiday_date BETWEEN @from AND @to`),
       ])
 
-      const hours = calculateWeek(
-        entries.recordset.map((entry) => ({
-          date: entry.workDate,
-          clockIn: entry.clockIn,
-          clockOut: entry.clockOut,
-          perDiem: entry.perDiem,
-        })),
-        new Set(holidays.recordset.map((holiday) => holiday.date)),
-      )
-      const hoursByDate = new Map(hours.days.map((day) => [day.date, day]))
-
-      const { days: _days, ...totals } = hours
       return {
         weekStart,
         weekEnd,
-        status: weekStatus(entries.recordset),
-        totals,
-        days: entries.recordset.flatMap((entry) => {
-          const day = hoursByDate.get(entry.workDate)
-          if (!day) return []
-          const { date: _date, ...breakdown } = day
-          return [{ ...entry, ...breakdown }]
-        }),
+        status: weekStatusOf(entries.recordset),
+        ...buildWeek(entries.recordset, new Set(holidays.recordset.map((holiday) => holiday.date))),
       }
     },
 

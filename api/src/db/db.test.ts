@@ -38,8 +38,13 @@ describe.skipIf(!db)('Base de datos local', () => {
 
   it('volver a cargar los datos de prueba no los duplica', async () => {
     const pool = await getPool(dbConfig)
+    // Solo los empleados de los datos de prueba: otras pruebas crean los suyos a la vez.
     const count = async () =>
-      (await pool.request().query<{ n: number }>('SELECT COUNT(*) AS n FROM employees')).recordset[0]?.n
+      (
+        await pool
+          .request()
+          .query<{ n: number }>("SELECT COUNT(*) AS n FROM employees WHERE employee_number LIKE 'PRUEBA-%'")
+      ).recordset[0]?.n
     const before = await count()
     await seed(dbConfig)
     expect(await count()).toBe(before)

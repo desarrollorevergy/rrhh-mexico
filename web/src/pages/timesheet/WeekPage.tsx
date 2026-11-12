@@ -7,22 +7,13 @@ import {
   STATUS_LABELS,
   STATUS_STYLES,
   timesheetApi,
+  weekLabel,
   type WeekDay,
   type WeekView,
 } from './api.ts'
 
 const CARD = 'rounded-2xl border border-border bg-surface shadow-sm'
 const CHIP = 'max-w-full cursor-pointer truncate rounded-full border px-2.5 py-1 text-xs font-medium'
-
-const shortDate = (date: string) =>
-  parseDateKey(date).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })
-
-/** «16/11/2026 al 22/11/2026», a partir del lunes. */
-function weekLabel(weekStart: string): string {
-  const end = parseDateKey(weekStart)
-  end.setDate(end.getDate() + 6)
-  return `${shortDate(weekStart)} al ${end.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
-}
 
 const dayLabel = (date: string) =>
   parseDateKey(date).toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })
