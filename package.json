@@ -1,0 +1,12 @@
+{
+  "name": "rrhh-mexico",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install --prefix web && npm install --prefix api",
+    "build": "npm run build --prefix web && npm run build --prefix api",
+    "start": "node api/dist/server.js"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

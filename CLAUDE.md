@@ -48,7 +48,7 @@ Portal web de Recursos Humanos para Revergy México. Sustituye a una Power App c
 | Base de datos | Azure SQL Database. En local: SQL Server en Docker. Librería: `mssql`. Scripts SQL versionados en `db/` |
 | Archivos | Azure Blob Storage (más adelante) |
 | Correo | Microsoft Graph desde un buzón compartido (más adelante) |
-| Hosting | Azure App Service, Linux, Node 24 LTS, región Mexico Central. **Aún no creado** (pendiente de suscripción de Revergy) |
+| Hosting | Azure App Service Linux **`rrhh-mexico`** (grupo de recursos `rrhh-mexico_group`), Node 24 LTS, plan Básico **B1**, región **West US 3** |
 | Procesos programados | Azure Functions con temporizador (más adelante: consolidado semanal, envío de nóminas) |
 | Pruebas | Vitest para lógica de negocio (sobre todo cálculo de horas) |
 
@@ -56,12 +56,18 @@ Portal web de Recursos Humanos para Revergy México. Sustituye a una Power App c
 
 Una sola aplicación: Express sirve el front compilado (`web/dist`) y la API bajo `/api`. App Service le pasa el puerto en `process.env.PORT`. El despliegue será con GitHub Actions desde `main` (organización GitHub `desarrollorevergy`).
 
+- El **build se hace en GitHub Actions** y se sube ya compilado; App Service no compila (`SCM_DO_BUILD_DURING_DEPLOYMENT=false`) y arranca con `npm start` desde la raíz del paquete.
+- El paquete desplegado lleva solo: `package.json` raíz, `api/package.json`, `api/dist`, `api/node_modules` (sin devDependencies) y `web/dist`.
+- Orden de rutas en `api/src/app.ts`: rutas `/api` → 404 JSON para cualquier `/api/*` inexistente → archivos de `web/dist` → `index.html` para el resto (lo resuelve el router del front). Con Express 5 el comodín se escribe `/{*splat}`, no `*`.
+- El workflow de GitHub Actions **aún no está creado**.
+
 ### Estructura del repo
 
 ```
 rrhh-mexico/
 ├── CLAUDE.md
 ├── .gitignore
+├── package.json  # scripts de la raíz: install:all, build, start
 ├── web/          # React + Vite + TS
 ├── api/          # Express + TS
 │   └── src/server.ts
@@ -78,6 +84,13 @@ cd api; npm run dev
 cd web; npm run dev
 # Comprobación
 # http://localhost:5173/api/health
+
+# Como en producción (desde la raíz): un solo servidor en el puerto 3000
+npm run install:all   # instala web/ y api/
+npm run build         # compila web/dist y api/dist
+npm start             # node api/dist/server.js
+# Pruebas de la API
+cd api; npm test
 ```
 
 ## Autenticación y autorización
@@ -189,6 +202,7 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 8. **Rol SuperAdmin:** existe en la Power App (lista `MatrizRoles`) y no en la tabla de roles de este archivo.
 9. **Identificación del empleado:** ¿se enlaza el usuario de Entra ID con la ficha por correo (como la Power App) o por ID de objeto de Entra?
 10. **Redondeo a medias horas:** el prototipo `parte-horas` redondea las horas del día a .0/.5. ¿Es una regla real?
+11. **Región de los datos:** el App Service está en West US 3 (antes se preveía Mexico Central). ¿La base de datos irá en la misma región? Implica que los datos personales se alojan fuera de México.
 
 Cuando se resuelva una duda, muévela a la sección correspondiente como regla.
 

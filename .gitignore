@@ -10,6 +10,9 @@ build/
 .env.*
 !.env.example
 
+# Configuración local de Claude Code
+.claude/settings.local.json
+
 # Sistema y editor
 .DS_Store
 Thumbs.db
