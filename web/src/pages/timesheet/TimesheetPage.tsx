@@ -1,5 +1,6 @@
 import { MessageSquare } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../../auth/authContext.ts'
 import { CommentDialog } from './CommentDialog.tsx'
 import { ProjectPicker } from './ProjectPicker.tsx'
@@ -65,14 +66,17 @@ export default function TimesheetPage() {
   const [draftComment, setDraftComment] = useState('')
 
   const [commentOpen, setCommentOpen] = useState(false)
+  // Semanas con días rechazados pendientes de corregir (la más reciente primero).
+  const [rejectedWeeks, setRejectedWeeks] = useState<string[]>([])
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([timesheetApi.projects(), timesheetApi.today()])
-      .then(([projectList, todayView]) => {
+    Promise.all([timesheetApi.projects(), timesheetApi.today(), timesheetApi.weeks()])
+      .then(([projectList, todayView, weekList]) => {
         if (cancelled) return
         setProjects(projectList)
         setToday(todayView)
+        setRejectedWeeks(weekList.rejectedWeeks)
       })
       .catch((cause: unknown) => {
         if (!cancelled) setLoadError(messageOf(cause))
@@ -135,6 +139,16 @@ export default function TimesheetPage() {
           <p className="truncate text-sm text-muted">{user.email}</p>
         </div>
       </section>
+
+      {rejectedWeeks[0] && (
+        <Link
+          to={`/parte-horas/semana?semana=${rejectedWeeks[0]}`}
+          role="alert"
+          className="rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-sm font-semibold text-red-800"
+        >
+          Tienes días rechazados por corregir ›
+        </Link>
+      )}
 
       <Clock />
 

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import sql from 'mssql'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
+import { createApprovalService } from '../approvals/service.js'
 import { encodePrincipal, PRINCIPAL_HEADER } from '../auth/principal.js'
 import { closePool, getPool } from '../db/pool.js'
 import { testDb } from '../db/testSetup.js'
@@ -25,7 +26,8 @@ describe.skipIf(!db)('Mi semana', () => {
   let projectId = 0
   const entryIds: Record<string, number> = {}
 
-  const service = createTimesheetService({ db: dbConfig, now: () => mx('2026-11-25T10:00:00') })
+  const approvals = createApprovalService({ db: dbConfig, includeDemo: false, notifier: () => undefined })
+  const service = createTimesheetService({ db: dbConfig, approvals, now: () => mx('2026-11-25T10:00:00') })
 
   // Semana del 16 al 22 de noviembre de 2026. El lunes 16 es festivo (Día de la Revolución).
   const ENTRIES: [date: string, hours: number | null, perDiem: boolean, status: string][] = [
@@ -133,6 +135,8 @@ describe.skipIf(!db)('Mi semana', () => {
     expect(await service.weeks(employeeId, MX)).toEqual({
       current: '2026-11-23',
       weeks: ['2026-11-23', '2026-11-16', '2026-11-09'],
+      // La prueba anterior dejó un día rechazado en la semana del 16
+      rejectedWeeks: ['2026-11-16'],
     })
   })
 

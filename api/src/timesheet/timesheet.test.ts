@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import sql from 'mssql'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
+import { createApprovalService } from '../approvals/service.js'
 import { encodePrincipal, PRINCIPAL_HEADER } from '../auth/principal.js'
 import { closePool, getPool } from '../db/pool.js'
 import { testDb } from '../db/testSetup.js'
@@ -100,7 +101,8 @@ describe.skipIf(!db)('Fichaje con base de datos', () => {
 
   // Reloj controlado por la prueba.
   let clock = mx('2026-11-09T08:00:00')
-  const service = createTimesheetService({ db: dbConfig, now: () => clock })
+  const approvals = createApprovalService({ db: dbConfig, includeDemo: false, notifier: () => undefined })
+  const service = createTimesheetService({ db: dbConfig, approvals, now: () => clock })
 
   const input = () => ({ projectId, shiftType: 'activa' as const, perDiem: true, comment: null })
 

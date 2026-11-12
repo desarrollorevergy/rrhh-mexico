@@ -5,7 +5,14 @@ import { requireRole } from '../auth/middleware.js'
 import type { DbConfig } from '../config/env.js'
 import { parseCorrection } from './corrections.js'
 import { parseReject, parseWeekAction, type TeamService } from './team.js'
-import { parseClockIn, parseComment, parseTimeZone, TimesheetError, type TimesheetService } from './service.js'
+import {
+  parseClockIn,
+  parseComment,
+  parseNote,
+  parseTimeZone,
+  TimesheetError,
+  type TimesheetService,
+} from './service.js'
 
 /**
  * Rutas de /api/timesheet: el fichaje del propio colaborador. Van detrás de `authenticate`.
@@ -63,6 +70,25 @@ export function timesheetRouter(db: DbConfig, service: TimesheetService, team: T
       if (!Number.isInteger(id) || id <= 0) throw new TimesheetError(404, 'Jornada no encontrada')
       await service.setEntryComment(actor.employeeId, id, parseComment(req.body))
       return { ok: true }
+    }),
+  )
+
+  // Corrección de los días rechazados y reenvío al supervisor
+  router.put(
+    '/entries/:id',
+    handle((actor, req) => {
+      const id = Number(req.params.id)
+      if (!Number.isInteger(id) || id <= 0) throw new TimesheetError(404, 'Jornada no encontrada')
+      return service.correctOwnEntry(actor.employeeId, id, parseCorrection(req.body))
+    }),
+  )
+
+  router.post(
+    '/week/send-correction',
+    handle((actor, req) => {
+      const date = (req.body as Record<string, unknown> | undefined)?.date
+      if (typeof date !== 'string' || !isValidDate(date)) throw new TimesheetError(400, 'Fecha no válida')
+      return service.sendCorrection(actor, date, parseNote(req.body))
     }),
   )
 

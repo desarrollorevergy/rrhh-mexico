@@ -213,7 +213,11 @@ Es el módulo que se presentará como terminado. Debe quedar **igual que la app 
    - El estado actual de cada día vive en `time_entries` (migración 006: motivo, quién revisó, corrección enviada).
    - **Regla confirmada (2026-11-13):** no se puede aprobar una semana con una jornada sin salida; hay que corregirla o rechazarla antes.
    - La decisión del motor y el cambio de estado de los días se guardan en dos pasos; si el segundo fallara, basta repetir la acción.
-6. Corrección y reenvío.
+6. Corrección y reenvío — **hecha**: en «Mi Semana» el colaborador ve el motivo, corrige **solo** los días rechazados (`PUT /api/timesheet/entries/:id`) y pulsa «Enviar corrección» con una nota opcional (`POST /week/send-correction`). Esos días vuelven a pendiente y el supervisor ve la semana como «Corregida». Aviso de días rechazados en la pantalla de fichar.
+   - No se puede enviar la corrección mientras un día rechazado siga sin salida.
+   - Un día corregido sigue rechazado hasta que se envía; enviado, ya no se puede cambiar.
+   - El motivo original se conserva en el día hasta la siguiente decisión del supervisor.
+   - El reenvío queda en el historial del motor (`resubmitted`, con la nota) y la corrección en `time_entry_changes`.
 7. RRHH: semanas aprobadas y CSV de nómina.
 8. Sin conexión (PWA).
 9. Orden de trabajo (Azure Blob) y avisos push.

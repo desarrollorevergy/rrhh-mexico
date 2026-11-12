@@ -317,7 +317,7 @@ export function createApprovalService(options: ApprovalServiceOptions) {
     },
 
     /** El solicitante corrige y reenvía una solicitud rechazada (si su tipo lo permite). */
-    resubmit(id: number, actor: Actor): Promise<ApprovalRequestView> {
+    resubmit(id: number, actor: Actor, note?: string): Promise<ApprovalRequestView> {
       return change(id, actor, async ({ row, state, relation, tx }) => {
         const def = getRequestType(row.request_type, includeDemo)
         if (!relation.isRequester || !def?.allowResubmit) throw new ApprovalError('not_allowed')
@@ -329,7 +329,8 @@ export function createApprovalService(options: ApprovalServiceOptions) {
           slot: null,
           actorId: actor.employeeId,
           action: 'resubmitted',
-          reason: null,
+          // Nota opcional del solicitante sobre lo que corrigió.
+          reason: note?.trim() || null,
         })
         return { state: next, event: 'resubmitted' }
       })

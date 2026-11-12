@@ -158,9 +158,15 @@ export const timesheetApi = {
   setComment: (comment: string) =>
     apiPut<TodayView>('/api/timesheet/today/comment', { comment, timeZone: deviceTimeZone() }),
   weeks: () =>
-    apiGet<{ current: string; weeks: string[] }>(
+    apiGet<{ current: string; weeks: string[]; rejectedWeeks: string[] }>(
       `/api/timesheet/weeks?timeZone=${encodeURIComponent(deviceTimeZone())}`,
     ),
+  /** El colaborador corrige uno de sus días rechazados. */
+  correctEntry: (entryId: number, changes: EntryCorrection) =>
+    apiPut<WeekView>(`/api/timesheet/entries/${entryId}`, changes),
+  /** Devuelve a revisión los días rechazados de la semana, con una nota opcional. */
+  sendCorrection: (date: string, note: string) =>
+    apiPost<WeekView>('/api/timesheet/week/send-correction', { date, note }),
   week: (date: string) => apiGet<WeekView>(`/api/timesheet/week?date=${date}`),
   setEntryComment: (entryId: number, comment: string) =>
     apiPut<{ ok: true }>(`/api/timesheet/entries/${entryId}/comment`, { comment }),

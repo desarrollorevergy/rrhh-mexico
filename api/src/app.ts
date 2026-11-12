@@ -90,7 +90,7 @@ export function createApp(options: AppOptions = {}): Express {
       '/api/timesheet',
       timesheetRouter(
         config.db,
-        createTimesheetService({ db: config.db }),
+        createTimesheetService({ db: config.db, approvals }),
         createTeamService({ db: config.db, approvals }),
       ),
     )

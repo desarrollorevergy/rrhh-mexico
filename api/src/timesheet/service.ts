@@ -1,6 +1,9 @@
 import sql from 'mssql'
+import type { ApprovalService } from '../approvals/service.js'
+import type { Actor } from '../auth/employee.js'
 import type { DbConfig } from '../config/env.js'
 import { getPool } from '../db/pool.js'
+import { createCorrections, type CorrectionInput } from './corrections.js'
 import {
   addDays,
   calculateWeek,
@@ -161,15 +164,26 @@ export function parseComment(body: unknown): string | null {
   return cleanComment(data.comment)
 }
 
+/** Nota opcional del colaborador al enviar la corrección. */
+export function parseNote(body: unknown): string | null {
+  const data = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>
+  if (data.note === undefined || data.note === null) return null
+  if (typeof data.note !== 'string' || data.note.length > MAX_COMMENT) throw new TimesheetError(400, 'La nota no es válida')
+  return data.note.trim() || null
+}
+
 export interface TimesheetServiceOptions {
   db: DbConfig
+  /** Motor de aprobaciones: registra el reenvío de una semana rechazada. */
+  approvals: ApprovalService
   /** Reloj del servidor. Solo se cambia en las pruebas. */
   now?: () => Date
 }
 
 export function createTimesheetService(options: TimesheetServiceOptions) {
-  const { db } = options
+  const { db, approvals } = options
   const now = options.now ?? (() => new Date())
+  const corrections = createCorrections(db)
 
   async function entriesByDate(employeeId: number, dates: DateKey[]): Promise<Map<DateKey, TimeEntry>> {
     const pool = await getPool(db)
@@ -232,20 +246,84 @@ export function createTimesheetService(options: TimesheetServiceOptions) {
       }
     },
 
-    /** Semanas en las que el empleado tiene jornadas (lunes de cada una), más la actual. */
-    async weeks(employeeId: number, timeZone: string): Promise<{ current: DateKey; weeks: DateKey[] }> {
+    /**
+     * Semanas en las que el empleado tiene jornadas (lunes de cada una), más la actual,
+     * y cuáles tienen días rechazados pendientes de corregir.
+     */
+    async weeks(
+      employeeId: number,
+      timeZone: string,
+    ): Promise<{ current: DateKey; weeks: DateKey[]; rejectedWeeks: DateKey[] }> {
       const current = weekStartOf(localParts(now(), timeZone).date)
       const pool = await getPool(db)
       const result = await pool
         .request()
         .input('employeeId', sql.Int, employeeId)
-        .query<{ date: DateKey }>(`
-          SELECT DISTINCT CONVERT(char(10), work_date, 23) AS date
+        .query<{ date: DateKey; rejected: number }>(`
+          SELECT CONVERT(char(10), work_date, 23) AS date,
+                 CASE WHEN status = 'rejected' THEN 1 ELSE 0 END AS rejected
           FROM time_entries WHERE employee_id = @employeeId`)
       const weeks = new Set(result.recordset.map((row) => weekStartOf(row.date)))
       weeks.add(current)
+      const rejectedWeeks = new Set(result.recordset.filter((row) => row.rejected).map((row) => weekStartOf(row.date)))
       // De la más reciente a la más antigua.
-      return { current, weeks: [...weeks].sort().reverse() }
+      return { current, weeks: [...weeks].sort().reverse(), rejectedWeeks: [...rejectedWeeks].sort().reverse() }
+    },
+
+    /**
+     * El colaborador corrige uno de sus días. Solo los rechazados por el supervisor:
+     * son los únicos que puede modificar después de fichar.
+     */
+    async correctOwnEntry(employeeId: number, entryId: number, input: CorrectionInput): Promise<WeekView> {
+      const pool = await getPool(db)
+      const found = await pool
+        .request()
+        .input('id', sql.Int, entryId)
+        .input('employeeId', sql.Int, employeeId)
+        .query<{ status: EntryStatus; workDate: DateKey }>(`
+          SELECT status, CONVERT(char(10), work_date, 23) AS workDate
+          FROM time_entries WHERE id = @id AND employee_id = @employeeId`)
+      const entry = found.recordset[0]
+      // Una jornada ajena se trata igual que una que no existe.
+      if (!entry) throw new TimesheetError(404, 'Jornada no encontrada')
+      if (entry.status !== 'rejected') {
+        throw new TimesheetError(409, 'Solo se pueden corregir los días rechazados por el supervisor')
+      }
+
+      await corrections.apply(entryId, input, employeeId, 'employee')
+      return this.week(employeeId, entry.workDate)
+    },
+
+    /**
+     * El colaborador devuelve a revisión los días rechazados de una semana, ya corregidos,
+     * con una nota opcional. El supervisor la verá como «Corregida».
+     */
+    async sendCorrection(actor: Actor, date: DateKey, note: string | null): Promise<WeekView> {
+      const weekStart = weekStartOf(date)
+      const current = await this.week(actor.employeeId, weekStart)
+      const rejected = current.days.filter((day) => day.status === 'rejected')
+      if (rejected.length === 0) throw new TimesheetError(409, 'No hay días rechazados que enviar')
+      if (rejected.some((day) => !day.clockOut)) {
+        throw new TimesheetError(409, 'Completa la hora de salida de los días rechazados antes de enviar la corrección')
+      }
+
+      // El reenvío queda en el historial de la solicitud que el supervisor rechazó.
+      const latest = await approvals.findLatest('timesheet_week', `${actor.employeeId}:${weekStart}`)
+      if (latest?.status === 'rejected') await approvals.resubmit(latest.id, actor, note ?? undefined)
+
+      const pool = await getPool(db)
+      await pool
+        .request()
+        .input('employeeId', sql.Int, actor.employeeId)
+        .input('from', sql.Date, weekStart)
+        .input('to', sql.Date, addDays(weekStart, 6))
+        .input('sentAt', sql.DateTime2(0), now())
+        .input('note', sql.NVarChar(1000), note)
+        .query(`
+          UPDATE time_entries
+          SET status = 'pending', correction_sent_at = @sentAt, correction_note = @note, updated_at = SYSUTCDATETIME()
+          WHERE employee_id = @employeeId AND work_date BETWEEN @from AND @to AND status = 'rejected'`)
+      return this.week(actor.employeeId, weekStart)
     },
 
     /** Comentario de una jornada propia, mientras no esté aprobada. */
