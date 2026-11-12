@@ -171,13 +171,41 @@ Los módulos 01, 02, 03, 08 y 10 comparten el patrón "solicitud → uno o vario
 - **Regla asumida, a confirmar:** nadie decide sobre su propia solicitud aunque tenga el rol aprobador.
 - Página de prueba solo en local: `/dev/aprobaciones`.
 
-## Módulo 01 — Parte de Horas (Fase 1)
+## Módulo 01 — Parte de Horas (Fase 1, en curso)
+
+Es el módulo que se presentará como terminado. Debe quedar **igual que la app desplegada pero adaptado** a esta arquitectura.
 
 ### Referencia existente
 
-En `../parte-horas` hay un **prototipo web** del módulo (React + Vite + Tailwind + Supabase, con `db.sql`). Se puede **reutilizar** la interfaz y la lógica, pero:
-- **No** usar Supabase: los datos van por nuestra API y Azure SQL.
-- **No** copiar `.env.local` ni ninguna clave.
+- **`../portal-recursos-humanos`: la app de parte de horas ya desplegada** (React + Vite + Supabase, PWA con fichaje sin conexión). Es la referencia de comportamiento e interfaz: fichaje, «Mi semana», panel de supervisión con rechazo por días, panel de RRHH con CSV, orden de trabajo adjunta y avisos push. Tiene manuales en `manual/`.
+- `../parte-horas`: prototipo anterior, más simple.
+- **No** usar Supabase: los datos van por nuestra API y Azure SQL. **No** copiar `.env.local` ni ninguna clave.
+
+### Decisiones (2026-11-12)
+
+- **Cálculo de horas:** el del documento funcional, no el de la app desplegada (ver «Reglas de cálculo»).
+- **Tipos de jornada:** solo Activa / Inactiva (la app desplegada tiene cuatro).
+- **Sin conexión, mixto:** con red la hora la pone el servidor; sin red el fichaje se guarda en el teléfono con la hora del dispositivo, se sube al reconectar y queda marcado como «fichado sin conexión».
+- **Datos:** se empieza limpio; la migración de empleados e historial desde Supabase se hará después.
+- **Se conserva de la app desplegada:** rechazo **por días** (el supervisor marca los días con problema; el colaborador corrige solo esos y reenvía), corrección de jornadas por el supervisor con historial, comentario por jornada, orden de trabajo adjunta, avisos push al rechazar, CSV de nómina.
+- **Medianoche:** una jornada abierta sigue siendo la activa hasta las 08:00 del día siguiente y cuenta para el día de la entrada.
+- **Fichaje olvidado:** lo corrige el supervisor (o el colaborador si le rechazan el día).
+- **Festivos:** calendario en la tabla `holidays`, mantenido por RRHH desde la app. Ya no los marca el supervisor a mano.
+- **GPS:** no se captura.
+- **Cambios por arquitectura:** el supervisor ve solo a su equipo (`supervisor_id`), no por departamento; RRHH solo ve semanas aprobadas.
+
+### Etapas
+
+1. Datos y catálogos — **hecha**: catálogo de 68 analíticas, administración de empleados y festivos para RRHH (`/empleados`, tarjeta 07 visible solo para RRHH; API en `api/src/admin/`).
+2. Cálculo de horas (funciones puras con pruebas).
+3. Fichaje con conexión (aquí se crean las tablas de jornadas).
+4. Mi semana.
+5. Supervisión (usa el motor de aprobaciones).
+6. Corrección y reenvío.
+7. RRHH: semanas aprobadas y CSV de nómina.
+8. Sin conexión (PWA).
+9. Orden de trabajo (Azure Blob) y avisos push.
+10. Producción: Azure SQL, migraciones en el despliegue, grupos de roles, empleados reales.
 
 ### Datos que registra el colaborador cada día
 
@@ -201,11 +229,13 @@ En `../parte-horas` hay un **prototipo web** del módulo (React + Vite + Tailwin
 
 | Tipo | Regla |
 |---|---|
-| H. Normal | Lunes a viernes, hasta 40 h semanales |
-| H. Extra | Al superar 8 h/día o 40 h/semana (entre semana) |
-| H. Domingo | Todas las horas del domingo cuentan como extra |
-| Festivo | Todas las horas en festivo oficial cuentan como extra |
-| Dietas | Según marca del colaborador, validado por supervisor |
+| H. Normal | Lunes a viernes no festivo, hasta 8 h por día |
+| H. Extra | Lo que pase de 8 h en esos días, más **todas** las horas del sábado |
+| H. Domingo | Todas las horas del domingo |
+| Festivo | Todas las horas de un día del calendario de festivos, caiga en el día que caiga |
+| Dietas | Número de días con dieta marcada, validado por supervisor |
+
+Interpretación confirmada el 2026-11-12: con el tope de 8 h diarias de lunes a viernes nunca se superan las 40 h semanales, así que las dos condiciones del documento no se solapan. Además: **sin redondeo** (tiempo exacto), **no se descuenta comida** (horas = salida − entrada) y la jornada **Inactiva** cuenta igual que la Activa (el tipo se muestra y se exporta).
 
 El colaborador **no** puede reportar horas extra a mano: se calculan.
 Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de la base de datos y de Express.
@@ -230,17 +260,13 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 
 ## Dudas pendientes (no decidir sin confirmar)
 
-1. **Sábado:** el flujo dice que cuenta como extra, pero la tabla de tipos no tiene categoría para el sábado.
-2. **Umbral de extra:** cómo se combinan "más de 8 h/día" y "más de 40 h/semana" cuando coinciden (evitar contar dos veces).
-3. **Festivos:** quién mantiene el calendario (¿RRHH desde la app?).
-4. **Fichaje olvidado:** qué pasa si alguien no ficha la salida (¿cierre automático?, ¿corrige el supervisor?).
-5. **Ubicación:** el detalle semanal muestra "ubicación". ¿Se captura GPS al fichar? (Implicaciones de privacidad.)
-6. **Jornada que cruza medianoche:** ¿a qué día se imputa?
-7. **Fichaje sin conexión:** la Power App guarda fichajes en una cola local y los sincroniza después. Choca con "hora del servidor". ¿Se necesita?
+Las dudas 1 a 7 y la 10 (sábado, umbral de extra, festivos, fichaje olvidado, ubicación, medianoche, sin conexión y redondeo) quedaron resueltas el 2026-11-12; están en la sección del módulo 01. Se conserva la numeración.
+
 8. **Rol SuperAdmin:** existe en la Power App (lista `MatrizRoles`) y no en la tabla de roles de este archivo.
 9. **Identificación del empleado:** ¿se enlaza el usuario de Entra ID con la ficha por correo (como la Power App) o por ID de objeto de Entra?
-10. **Redondeo a medias horas:** el prototipo `parte-horas` redondea las horas del día a .0/.5. ¿Es una regla real?
 11. **Aprobar la propia solicitud:** el motor de aprobaciones lo impide (por ejemplo, alguien de RRHH no puede dar la aprobación de RRHH a su propia solicitud). Es una regla asumida, no está en el documento. ¿Es correcta? Si lo es, ¿quién aprueba en ese caso?
+
+12. **Catálogo de analíticas:** ¿quién lo mantiene? Hoy se carga por migración (`db/migrations/004_project_catalog.sql`); no hay pantalla para añadir o desactivar proyectos.
 
 Cuando se resuelva una duda, muévela a la sección correspondiente como regla.
 

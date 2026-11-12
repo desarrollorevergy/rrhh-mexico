@@ -38,6 +38,14 @@ export function apiPost<T>(path: string, body: unknown = {}): Promise<T> {
   return apiRequest<T>('POST', path, body)
 }
 
+export function apiPut<T>(path: string, body: unknown): Promise<T> {
+  return apiRequest<T>('PUT', path, body)
+}
+
+export function apiDelete<T>(path: string): Promise<T> {
+  return apiRequest<T>('DELETE', path)
+}
+
 async function apiRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'

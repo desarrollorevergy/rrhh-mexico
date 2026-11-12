@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import express, { type ErrorRequestHandler, type Express } from 'express'
+import { createAdminRepository } from './admin/repository.js'
+import { adminRouter } from './admin/routes.js'
 import { approvalsRouter } from './approvals/routes.js'
 import { createApprovalService } from './approvals/service.js'
 import { DEV_USERS, devIsSupervisor } from './auth/devUsers.js'
@@ -75,8 +77,9 @@ export function createApp(options: AppOptions = {}): Express {
     }
   })
 
-  // Motor de aprobaciones. Necesita la base de datos.
+  // Catálogos, administración y motor de aprobaciones. Necesitan la base de datos.
   if (config.db) {
+    app.use('/api', adminRouter(createAdminRepository(config.db)))
     const approvals = createApprovalService({ db: config.db, includeDemo: config.devAuth })
     app.use('/api/approvals', approvalsRouter(config, config.db, approvals))
   }

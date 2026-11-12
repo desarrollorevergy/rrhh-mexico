@@ -5,6 +5,9 @@ import { AppShell } from './layout/AppShell.tsx'
 import { HomePage } from './pages/HomePage.tsx'
 import { NotFoundPage } from './pages/NotFoundPage.tsx'
 
+// Las pantallas de cada módulo se descargan al entrar en ellas.
+const AdminPage = lazy(() => import('./pages/admin/AdminPage.tsx'))
+
 // Página de prueba del motor de aprobaciones: solo existe en desarrollo.
 const ApprovalsDemoPage = import.meta.env.DEV ? lazy(() => import('./pages/dev/ApprovalsDemoPage.tsx')) : null
 
@@ -15,6 +18,14 @@ function App() {
         <Routes>
           <Route element={<AppShell />}>
             <Route index element={<HomePage />} />
+            <Route
+              path="empleados"
+              element={
+                <Suspense fallback={null}>
+                  <AdminPage />
+                </Suspense>
+              }
+            />
             {ApprovalsDemoPage && (
               <Route
                 path="dev/aprobaciones"

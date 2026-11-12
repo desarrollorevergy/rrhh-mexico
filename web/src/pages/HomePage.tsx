@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { MODULES, type AppModule } from '../navigation/modules.ts'
+import { useAuth } from '../auth/authContext.ts'
+import { isModuleAvailable, MODULES, type AppModule } from '../navigation/modules.ts'
 
 const CARD_CLASS =
   'flex min-h-[134px] w-full cursor-pointer items-center gap-4 rounded-[14px] border border-border bg-surface py-3.5 pr-3 pl-5 text-left shadow-sm hover:bg-accent-soft active:bg-accent-soft-strong focus-visible:outline-2 focus-visible:outline-accent min-[700px]:min-h-[120px]'
 
-function ModuleCardContent({ module }: { module: AppModule }) {
+function ModuleCardContent({ module, available }: { module: AppModule; available: boolean }) {
   const Icon = module.icon
   return (
     <>
@@ -16,9 +17,9 @@ function ModuleCardContent({ module }: { module: AppModule }) {
         <span className="truncate text-[17px] leading-7 font-bold text-text">{module.title}</span>
         <span className="flex-1 text-[13px] leading-[1.35] text-muted">{module.description}</span>
         <span
-          className={`truncate pt-1 text-xs font-semibold ${module.available ? 'text-accent' : 'text-faint'}`}
+          className={`truncate pt-1 text-xs font-semibold ${available ? 'text-accent' : 'text-faint'}`}
         >
-          Módulo {module.num}&nbsp;&nbsp;·&nbsp;&nbsp;{module.available ? 'Disponible' : 'Próximamente'}
+          Módulo {module.num}&nbsp;&nbsp;·&nbsp;&nbsp;{available ? 'Disponible' : 'Próximamente'}
         </span>
       </span>
     </>
@@ -26,6 +27,7 @@ function ModuleCardContent({ module }: { module: AppModule }) {
 }
 
 export function HomePage() {
+  const { roles } = useAuth()
   const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
@@ -48,24 +50,27 @@ export function HomePage() {
         aria-label="Módulos de la plataforma"
         className="grid grid-cols-1 gap-4 p-2 min-[700px]:grid-cols-2 min-[1100px]:grid-cols-3"
       >
-        {MODULES.map((module) => (
-          <li key={module.num}>
-            {module.available ? (
-              <Link to={module.path} title={`Abrir módulo ${module.title}`} className={CARD_CLASS}>
-                <ModuleCardContent module={module} />
-              </Link>
-            ) : (
-              <button
-                type="button"
-                title={`Abrir módulo ${module.title}`}
-                onClick={() => setNotice(`${module.title} estará disponible próximamente`)}
-                className={CARD_CLASS}
-              >
-                <ModuleCardContent module={module} />
-              </button>
-            )}
-          </li>
-        ))}
+        {MODULES.map((module) => {
+          const available = isModuleAvailable(module, roles)
+          return (
+            <li key={module.num}>
+              {available ? (
+                <Link to={module.path} title={`Abrir módulo ${module.title}`} className={CARD_CLASS}>
+                  <ModuleCardContent module={module} available />
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  title={`Abrir módulo ${module.title}`}
+                  onClick={() => setNotice(`${module.title} estará disponible próximamente`)}
+                  className={CARD_CLASS}
+                >
+                  <ModuleCardContent module={module} available={false} />
+                </button>
+              )}
+            </li>
+          )
+        })}
       </ul>
 
       <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 top-20 z-50 flex justify-center px-4">
