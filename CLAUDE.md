@@ -45,7 +45,7 @@ Portal web de Recursos Humanos para Revergy México. Sustituye a una Power App c
 |---|---|
 | Front | React + Vite + TypeScript (`web/`) |
 | API | Node + Express 5 + TypeScript, ESM (`"type": "module"`, `NodeNext`), `tsx` en desarrollo (`api/`) |
-| Base de datos | Azure SQL Database. En local: SQL Server en Docker. Librería: `mssql`. Scripts SQL versionados en `db/` |
+| Base de datos | Azure SQL Database (aún no creada). En local: **SQL Server 2025 Developer instalado en Windows** (sin Docker), base `rrhh`, usuario de SQL `rrhh_app`. Librería: `mssql`. Scripts SQL versionados en `db/migrations/` |
 | Archivos | Azure Blob Storage (más adelante) |
 | Correo | Microsoft Graph desde un buzón compartido (más adelante) |
 | Hosting | Azure App Service Linux **`rrhh-mexico`** (grupo de recursos `rrhh-mexico_group`), Node 24 LTS, plan Básico **B1**, región **West US 3** |
@@ -94,7 +94,22 @@ npm test              # pruebas de la API
 npm start             # node api/dist/server.js
 # Pruebas de la API
 cd api; npm test
+
+# Base de datos local (lee la conexión de api/.env)
+cd api; npm run db:migrate   # aplica los scripts pendientes de db/migrations
+cd api; npm run db:seed      # carga datos de prueba ficticios (solo con DEV_AUTH=true)
+# Comprobación: http://localhost:5173/api/health/db
 ```
+
+### Base de datos
+
+- **Migraciones:** scripts numerados en `db/migrations/` (`001_base.sql`, ...). `api/src/db/migrate.ts` aplica los pendientes en orden, cada uno en una transacción, y los anota en la tabla `schema_migrations`. Un script ya aplicado **no se edita**: los cambios van en un script nuevo. No usar `GO`.
+- **Tablas actuales:** `departments`, `employees` (con `supervisor_id`), `projects` (analíticas) y `holidays`. Sin datos sensibles todavía.
+- **Datos de prueba:** `api/src/db/seed.ts` crea un empleado por cada usuario de prueba de `devUsers.ts`. No se ejecuta sin `DEV_AUTH=true`.
+- **Enlace usuario ↔ empleado:** por **correo** (provisional, ver duda 9). La columna `entra_object_id` queda reservada.
+- **Sin base de datos configurada** (`DB_SERVER` vacío, como hoy en Azure) la API arranca igual y nadie es Supervisor.
+- **Pruebas:** las de base de datos corren contra la base local y se omiten donde no hay `DB_SERVER` (GitHub Actions).
+- **Instalación local:** SQL Server viene con TCP/IP desactivado y solo autenticación de Windows; hay que activar TCP/IP (puerto 1433) y el modo mixto, y crear la base y el usuario de la aplicación. La contraseña vive solo en `api/.env`.
 
 ## Autenticación y autorización
 
@@ -109,7 +124,8 @@ cd api; npm test
 - **API** (`api/src/auth/`): `principal.ts` decodifica la cabecera; `roles.ts` calcula los roles; `middleware.ts` tiene `authenticate` (401), `requireRole` (403) y `getAuth(res)` para leer el usuario en una ruta. Todo `/api` exige usuario salvo `/api/health`. `GET /api/me` devuelve usuario y roles.
 - **Local:** `DEV_AUTH=true` en `api/.env` activa `devAuth`, que fabrica la cabecera real a partir del usuario de prueba elegido (cabecera `X-Dev-User`). Usuarios ficticios en `api/src/auth/devUsers.ts`. La API **no arranca** con `DEV_AUTH=true` si detecta producción o Azure (`WEBSITE_SITE_NAME`).
 - **Front** (`web/src/auth/`): `AuthProvider` carga `/api/me` antes de mostrar la app; `useAuth()` da el usuario. El selector `web/src/dev/DevUserSwitcher.tsx` solo se carga con `import.meta.env.DEV`.
-- **Pendiente:** el rol Supervisor "por datos" es provisional (en local sale de `devUsers.ts`; en producción nadie lo es) hasta que exista la tabla de empleados. En producción todos son solo Colaborador hasta que se creen los grupos de Entra ID, el registro de aplicación emita el claim `groups` y se definan las variables `ENTRA_GROUP_*` en el App Service. El menú de módulos aún no se filtra por rol.
+- **Supervisor "por datos":** sale de la tabla `employees` (`api/src/db/employees.ts`): lo es quien tiene empleados activos con su `supervisor_id`. En producción nadie lo es hasta que exista la base de datos en Azure.
+- **Pendiente:** en producción todos son solo Colaborador hasta que se creen los grupos de Entra ID, el registro de aplicación emita el claim `groups` y se definan las variables `ENTRA_GROUP_*` en el App Service. El menú de módulos aún no se filtra por rol.
 
 ### Roles
 
@@ -228,6 +244,7 @@ Se manejan datos personales (CURP, RFC, NSS, salario, incapacidades). Aplica la 
 - Hosting en **App Service** (no Static Web App). La SWA anterior se eliminó.
 - Región **West US 3** (confirmada; antes se preveía Mexico Central). La base de datos irá en la misma región que la app.
 - El repositorio de GitHub es **privado**.
-- Base de datos **Azure SQL**, no listas de SharePoint ni Supabase.
+- Base de datos **Azure SQL**, no listas de SharePoint ni Supabase. Se valoró PostgreSQL el 2026-11-12 y se mantuvo SQL Server.
+- En local, SQL Server **instalado en Windows**, no en Docker (Docker Desktop no se instaló).
 - Front con framework (React) por la complejidad: 11 módulos y vistas por rol.
 - Las partes públicas (buzón anónimo, portal de postulantes) irán separadas de la app principal; se decidirá cómo al llegar a esos módulos.

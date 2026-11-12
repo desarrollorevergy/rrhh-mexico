@@ -12,11 +12,46 @@ const GROUP_ENV: Record<GroupRole, string> = {
   etica: 'ENTRA_GROUP_ETICA',
 }
 
+export interface DbConfig {
+  server: string
+  port: number
+  database: string
+  user: string
+  password: string
+  encrypt: boolean
+  /** Solo en local: el certificado de SQL Server es autofirmado. */
+  trustServerCertificate: boolean
+}
+
 export interface AppConfig {
   /** Autenticación simulada: solo para desarrollo en local. */
   devAuth: boolean
   /** ID de grupo de Entra ID por rol. Un rol sin grupo configurado no se asigna a nadie. */
   groupIds: Partial<Record<GroupRole, string>>
+  /** Conexión a la base de datos. Sin configurar, la app arranca sin base de datos. */
+  db?: DbConfig
+}
+
+function loadDbConfig(env: NodeJS.ProcessEnv): DbConfig | undefined {
+  const server = env.DB_SERVER?.trim()
+  if (!server) return undefined
+
+  const database = env.DB_NAME?.trim()
+  const user = env.DB_USER?.trim()
+  const password = env.DB_PASSWORD
+  if (!database || !user || !password) {
+    throw new Error('Con DB_SERVER definido hacen falta también DB_NAME, DB_USER y DB_PASSWORD.')
+  }
+
+  return {
+    server,
+    port: Number(env.DB_PORT ?? 1433),
+    database,
+    user,
+    password,
+    encrypt: env.DB_ENCRYPT !== 'false',
+    trustServerCertificate: env.DB_TRUST_SERVER_CERTIFICATE === 'true',
+  }
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -39,5 +74,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     }
   }
 
-  return { devAuth, groupIds }
+  const db = loadDbConfig(env)
+  return db ? { devAuth, groupIds, db } : { devAuth, groupIds }
 }
