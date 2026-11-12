@@ -27,7 +27,7 @@ function ModuleCardContent({ module, available }: { module: AppModule; available
 }
 
 export function HomePage() {
-  const { roles } = useAuth()
+  const user = useAuth()
   const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
@@ -51,7 +51,7 @@ export function HomePage() {
         className="grid grid-cols-1 gap-4 p-2 min-[700px]:grid-cols-2 min-[1100px]:grid-cols-3"
       >
         {MODULES.map((module) => {
-          const available = isModuleAvailable(module, roles)
+          const available = isModuleAvailable(module, user)
           return (
             <li key={module.num}>
               {available ? (

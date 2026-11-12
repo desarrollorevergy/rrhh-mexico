@@ -27,9 +27,11 @@ export interface AppModule {
   availableFor?: Role[]
 }
 
-/** ¿Puede entrar ya al módulo alguien con estos roles? La API vuelve a comprobarlo. */
-export function isModuleAvailable(module: AppModule, roles: Role[]): boolean {
-  return module.available || (module.availableFor?.some((role) => roles.includes(role)) ?? false)
+/** ¿Puede entrar ya este usuario al módulo? La API vuelve a comprobarlo. */
+export function isModuleAvailable(module: AppModule, user: { roles: Role[]; hasDatabase: boolean }): boolean {
+  // Sin base de datos en el servidor ningún módulo puede funcionar todavía.
+  if (!user.hasDatabase) return false
+  return module.available || (module.availableFor?.some((role) => user.roles.includes(role)) ?? false)
 }
 
 // Catálogo de los 11 módulos (numeración de CLAUDE.md).
@@ -40,7 +42,7 @@ export const MODULES: AppModule[] = [
     description: 'Registro diario de fichaje con validación semanal del supervisor.',
     icon: Clock,
     path: '/parte-horas',
-    available: false,
+    available: true,
   },
   {
     num: '02',

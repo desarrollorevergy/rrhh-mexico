@@ -1,9 +1,8 @@
-import { Router, type RequestHandler, type Response } from 'express'
-import { getAuth } from '../auth/middleware.js'
+import { Router, type RequestHandler } from 'express'
+import { getActor, requireEmployee, type Actor } from '../auth/employee.js'
 import type { AppConfig, DbConfig } from '../config/env.js'
-import { findEmployeeByEmail } from '../db/employees.js'
 import { DEMO_TYPE } from './chains.js'
-import type { Actor, ApprovalService } from './service.js'
+import type { ApprovalService } from './service.js'
 import { ApprovalError, type ApprovalErrorCode } from './types.js'
 
 const HTTP_STATUS: Record<ApprovalErrorCode, number> = {
@@ -17,28 +16,12 @@ const HTTP_STATUS: Record<ApprovalErrorCode, number> = {
   unknown_type: 400,
 }
 
-/** Quien actúa en esta petición. Solo en rutas que pasan por `resolveActor`. */
-function getActor(res: Response): Actor {
-  return res.locals.actor as Actor
-}
-
 /** Rutas de /api/approvals. Van detrás de `authenticate`. */
 export function approvalsRouter(config: AppConfig, db: DbConfig, service: ApprovalService): Router {
   const router = Router()
 
   // Las aprobaciones se hacen entre empleados: hace falta la ficha de quien actúa.
-  const resolveActor: RequestHandler = async (_req, res, next) => {
-    const { user, roles } = getAuth(res)
-    const employee = await findEmployeeByEmail(db, user.email)
-    if (!employee) {
-      res.status(403).json({ error: 'Tu usuario no tiene ficha de empleado' })
-      return
-    }
-    const actor: Actor = { employeeId: employee.id, roles }
-    res.locals.actor = actor
-    next()
-  }
-  router.use(resolveActor)
+  router.use(requireEmployee(db))
 
   /** Ejecuta la acción y traduce los errores del motor a su código HTTP. */
   const handle =

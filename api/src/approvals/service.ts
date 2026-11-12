@@ -1,5 +1,5 @@
 import sql from 'mssql'
-import type { Role } from '../auth/types.js'
+import type { Actor } from '../auth/employee.js'
 import type { DbConfig } from '../config/env.js'
 import { getPool } from '../db/pool.js'
 import { getRequestType } from './chains.js'
@@ -22,11 +22,7 @@ import {
   type ApprovalStep,
 } from './types.js'
 
-/** Quien actúa: su ficha de empleado y sus roles. */
-export interface Actor {
-  employeeId: number
-  roles: Role[]
-}
+export type { Actor }
 
 export interface ApprovalHistoryEntry {
   action: ApprovalAction

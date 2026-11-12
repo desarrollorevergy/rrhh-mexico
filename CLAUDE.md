@@ -188,7 +188,9 @@ Es el módulo que se presentará como terminado. Debe quedar **igual que la app 
 - **Sin conexión, mixto:** con red la hora la pone el servidor; sin red el fichaje se guarda en el teléfono con la hora del dispositivo, se sube al reconectar y queda marcado como «fichado sin conexión».
 - **Datos:** se empieza limpio; la migración de empleados e historial desde Supabase se hará después.
 - **Se conserva de la app desplegada:** rechazo **por días** (el supervisor marca los días con problema; el colaborador corrige solo esos y reenvía), corrección de jornadas por el supervisor con historial, comentario por jornada, orden de trabajo adjunta, avisos push al rechazar, CSV de nómina.
-- **Medianoche:** una jornada abierta sigue siendo la activa hasta las 08:00 del día siguiente y cuenta para el día de la entrada.
+- **Medianoche:** una jornada abierta sigue siendo la activa hasta las 08:00 del día siguiente y cuenta para el día de la entrada. Si se cerró de madrugada, se sigue mostrando hasta las 08:00 y hasta entonces no se puede fichar la de hoy (igual que la app desplegada).
+- **Zona horaria:** el dispositivo envía su zona (IANA) en cada petición y el servidor calcula con ella el día de la jornada; la hora la pone siempre el servidor y se guarda en UTC. Revergy tiene sedes en zonas distintas (Sonora va una hora por detrás del centro).
+- **Módulos sin base de datos:** `/api/me` devuelve `hasDatabase`; si es `false` (como hoy en producción) todas las tarjetas siguen en «Próximamente».
 - **Fichaje olvidado:** lo corrige el supervisor (o el colaborador si le rechazan el día).
 - **Festivos:** calendario en la tabla `holidays`, mantenido por RRHH desde la app. Ya no los marca el supervisor a mano.
 - **GPS:** no se captura.
@@ -200,7 +202,7 @@ Es el módulo que se presentará como terminado. Debe quedar **igual que la app 
 1. Datos y catálogos — **hecha**: catálogo de 68 analíticas, administración de empleados y festivos para RRHH (`/empleados`, tarjeta 07 visible solo para RRHH; API en `api/src/admin/`).
    Pendiente de esta etapa: pantalla de mantenimiento de analíticas para Controlling.
 2. Cálculo de horas — **hecha**: `api/src/timesheet/hours.ts` (funciones puras, en minutos completos; `calculateWeek` da el consolidado).
-3. Fichaje con conexión (aquí se crean las tablas de jornadas).
+3. Fichaje con conexión — **hecha**: tabla `time_entries` (migración 005), API en `api/src/timesheet/` (`/api/timesheet/today`, `clock-in`, `clock-out`, `today/comment`) y pantalla `/parte-horas` (`web/src/pages/timesheet/`). La tarjeta 01 está disponible para todos.
 4. Mi semana.
 5. Supervisión (usa el motor de aprobaciones).
 6. Corrección y reenvío.

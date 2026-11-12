@@ -9,6 +9,8 @@ import { DEV_USERS, devIsSupervisor } from './auth/devUsers.js'
 import { authenticate, devAuth, getAuth, type SupervisorLookup } from './auth/middleware.js'
 import { loadConfig, type AppConfig } from './config/env.js'
 import { pingDb, supervisorLookupFromDb } from './db/employees.js'
+import { timesheetRouter } from './timesheet/routes.js'
+import { createTimesheetService } from './timesheet/service.js'
 
 // Front compilado. La ruta vale igual en desarrollo (api/src, con tsx) y compilado
 // (api/dist): los dos están a dos niveles de la raíz del repo.
@@ -60,7 +62,8 @@ export function createApp(options: AppOptions = {}): Express {
 
   app.get('/api/me', (_req, res) => {
     const { user, roles } = getAuth(res)
-    res.json({ id: user.id, name: user.name, email: user.email, roles })
+    // hasDatabase: sin base de datos configurada los módulos aún no están disponibles.
+    res.json({ id: user.id, name: user.name, email: user.email, roles, hasDatabase: Boolean(config.db) })
   })
 
   // ¿Responde la base de datos? No da detalles del error.
@@ -80,6 +83,7 @@ export function createApp(options: AppOptions = {}): Express {
   // Catálogos, administración y motor de aprobaciones. Necesitan la base de datos.
   if (config.db) {
     app.use('/api', adminRouter(createAdminRepository(config.db)))
+    app.use('/api/timesheet', timesheetRouter(config.db, createTimesheetService({ db: config.db })))
     const approvals = createApprovalService({ db: config.db, includeDemo: config.devAuth })
     app.use('/api/approvals', approvalsRouter(config, config.db, approvals))
   }

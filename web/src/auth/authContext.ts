@@ -27,6 +27,8 @@ export interface CurrentUser {
   name: string
   email: string
   roles: Role[]
+  /** false mientras el servidor no tenga base de datos: los módulos aún no funcionan. */
+  hasDatabase: boolean
 }
 
 export const AuthContext = createContext<CurrentUser | null>(null)

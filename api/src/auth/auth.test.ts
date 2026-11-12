@@ -114,6 +114,8 @@ describe('GET /api/me como en producción', () => {
       name: USER.name,
       email: USER.email,
       roles: ['colaborador', 'rrhh'],
+      // Esta app de prueba no tiene base de datos configurada.
+      hasDatabase: false,
     })
   })
 
