@@ -1,4 +1,5 @@
 import { Router, type RequestHandler } from 'express'
+import { isValidDate } from '../admin/validation.js'
 import { getActor, requireEmployee, type Actor } from '../auth/employee.js'
 import type { DbConfig } from '../config/env.js'
 import { parseClockIn, parseComment, parseTimeZone, TimesheetError, type TimesheetService } from './service.js'
@@ -38,6 +39,28 @@ export function timesheetRouter(db: DbConfig, service: TimesheetService): Router
   router.put(
     '/today/comment',
     handle((actor, req) => service.setComment(actor.employeeId, timeZoneOf(req), parseComment(req.body))),
+  )
+
+  // «Mi semana»
+  router.get('/weeks', handle((actor, req) => service.weeks(actor.employeeId, timeZoneOf(req))))
+
+  router.get(
+    '/week',
+    handle((actor, req) => {
+      const date = req.query.date
+      if (typeof date !== 'string' || !isValidDate(date)) throw new TimesheetError(400, 'Fecha no válida')
+      return service.week(actor.employeeId, date)
+    }),
+  )
+
+  router.put(
+    '/entries/:id/comment',
+    handle(async (actor, req) => {
+      const id = Number(req.params.id)
+      if (!Number.isInteger(id) || id <= 0) throw new TimesheetError(404, 'Jornada no encontrada')
+      await service.setEntryComment(actor.employeeId, id, parseComment(req.body))
+      return { ok: true }
+    }),
   )
 
   return router

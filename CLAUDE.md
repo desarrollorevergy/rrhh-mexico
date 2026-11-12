@@ -203,7 +203,7 @@ Es el módulo que se presentará como terminado. Debe quedar **igual que la app 
    Pendiente de esta etapa: pantalla de mantenimiento de analíticas para Controlling.
 2. Cálculo de horas — **hecha**: `api/src/timesheet/hours.ts` (funciones puras, en minutos completos; `calculateWeek` da el consolidado).
 3. Fichaje con conexión — **hecha**: tabla `time_entries` (migración 005), API en `api/src/timesheet/` (`/api/timesheet/today`, `clock-in`, `clock-out`, `today/comment`) y pantalla `/parte-horas` (`web/src/pages/timesheet/`). La tarjeta 01 está disponible para todos.
-4. Mi semana.
+4. Mi semana — **hecha**: `/parte-horas/semana` con selector de semana, estado, totales y una tarjeta por día con su nota; menú inferior «Fichar / Mi Semana» (`TimesheetLayout`). API: `/api/timesheet/weeks`, `/week?date=` y `/entries/:id/comment`. Las horas se muestran como `h:mm`.
 5. Supervisión (usa el motor de aprobaciones).
 6. Corrección y reenvío.
 7. RRHH: semanas aprobadas y CSV de nómina.

@@ -1,8 +1,9 @@
 import { MessageSquare } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../auth/authContext.ts'
+import { CommentDialog } from './CommentDialog.tsx'
 import { ProjectPicker } from './ProjectPicker.tsx'
-import { SHIFT_TYPES, timesheetApi, type Project, type ShiftType, type TodayView } from './api.ts'
+import { formatTime, SHIFT_TYPES, timesheetApi, type Project, type ShiftType, type TodayView } from './api.ts'
 
 const CARD = 'rounded-2xl border border-border bg-surface shadow-sm'
 const LABEL = 'mb-1.5 block text-[15px] font-semibold text-text'
@@ -20,9 +21,6 @@ function initials(name: string): string {
       .toUpperCase() || 'U'
   )
 }
-
-const formatTime = (iso: string) =>
-  new Date(iso).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false })
 
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : 'Ha ocurrido un error'
@@ -66,9 +64,7 @@ export default function TimesheetPage() {
   const [perDiem, setPerDiem] = useState(false)
   const [draftComment, setDraftComment] = useState('')
 
-  // Editor de comentario
   const [commentOpen, setCommentOpen] = useState(false)
-  const [commentText, setCommentText] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -119,8 +115,7 @@ export default function TimesheetPage() {
   const comment = entry ? (entry.comment ?? '') : draftComment
   const canClockIn = projectId !== null && shiftType !== '' && !saving
 
-  const saveComment = async () => {
-    const text = commentText.trim()
+  const saveComment = async (text: string) => {
     if (entry) {
       if (!(await run(() => timesheetApi.setComment(text)))) return
     } else {
@@ -192,10 +187,7 @@ export default function TimesheetPage() {
         <button
           type="button"
           disabled={saving || state === 'loading' || (approved && !comment)}
-          onClick={() => {
-            setCommentText(comment)
-            setCommentOpen(true)
-          }}
+          onClick={() => setCommentOpen(true)}
           className={`mb-5 flex h-10 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-medium text-accent disabled:cursor-default disabled:opacity-60 ${
             comment ? 'border border-accent bg-accent-soft-strong' : 'border border-dashed border-border bg-bg'
           }`}
@@ -264,41 +256,13 @@ export default function TimesheetPage() {
       </section>
 
       {commentOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 min-[520px]:items-center">
-          <div role="dialog" aria-modal="true" aria-labelledby="comment-title" className="w-full max-w-md rounded-2xl border border-border bg-surface p-4 shadow-xl">
-            <h2 id="comment-title" className="mb-2 text-lg font-bold text-text">Comentario</h2>
-            <textarea
-              id="ts-comment"
-              autoFocus
-              rows={4}
-              maxLength={1000}
-              readOnly={approved}
-              value={commentText}
-              onChange={(event) => setCommentText(event.target.value)}
-              placeholder="Observaciones de la jornada"
-              className="w-full rounded-lg border border-border bg-surface p-3 text-[15px] text-text placeholder:text-faint focus-visible:outline-2 focus-visible:outline-accent"
-            />
-            <div className="mt-3 flex justify-end gap-2">
-              <button
-                type="button"
-                className="h-10 cursor-pointer rounded-lg border border-border px-4 text-sm font-semibold text-text"
-                onClick={() => setCommentOpen(false)}
-              >
-                {approved ? 'Cerrar' : 'Cancelar'}
-              </button>
-              {!approved && (
-                <button
-                  type="button"
-                  disabled={saving}
-                  className="h-10 cursor-pointer rounded-lg bg-brand-blue px-4 text-sm font-semibold text-white disabled:opacity-50"
-                  onClick={() => void saveComment()}
-                >
-                  Guardar
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        <CommentDialog
+          initialText={comment}
+          readOnly={approved}
+          saving={saving}
+          onSave={(text) => void saveComment(text)}
+          onClose={() => setCommentOpen(false)}
+        />
       )}
     </div>
   )

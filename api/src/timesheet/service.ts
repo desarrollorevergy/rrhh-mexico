@@ -1,7 +1,14 @@
 import sql from 'mssql'
 import type { DbConfig } from '../config/env.js'
 import { getPool } from '../db/pool.js'
-import { addDays, type DateKey } from './hours.js'
+import {
+  addDays,
+  calculateWeek,
+  weekStartOf,
+  type DateKey,
+  type DayKind,
+  type HoursBreakdown,
+} from './hours.js'
 import { isValidTimeZone, localParts, resolveActiveShift } from './shift.js'
 
 export type ShiftType = 'activa' | 'inactiva'
@@ -19,6 +26,23 @@ export interface TimeEntry {
   clockIn: Date
   clockOut: Date | null
   status: EntryStatus
+}
+
+/** Una jornada con sus horas ya repartidas (en minutos). */
+export interface WeekDay extends TimeEntry, HoursBreakdown {
+  kind: DayKind
+  /** false si falta la salida. */
+  complete: boolean
+}
+
+/** «Mi semana»: las jornadas de lunes a domingo con su consolidado. */
+export interface WeekView {
+  weekStart: DateKey
+  weekEnd: DateKey
+  /** Estado de la semana; null si no tiene jornadas. */
+  status: EntryStatus | null
+  totals: HoursBreakdown & { perDiems: number }
+  days: WeekDay[]
 }
 
 /** Lo que ve la pantalla de fichar. */
@@ -123,8 +147,104 @@ export function createTimesheetService(options: TimesheetServiceOptions) {
     return { ...active, entry: entries.get(active.workDate) ?? null }
   }
 
+  /** Estado de una semana a partir del de sus días. */
+  function weekStatus(entries: TimeEntry[]): EntryStatus | null {
+    if (entries.length === 0) return null
+    if (entries.some((entry) => entry.status === 'rejected')) return 'rejected'
+    if (entries.some((entry) => entry.status === 'pending')) return 'pending'
+    return 'approved'
+  }
+
   return {
     today,
+
+    /** Jornadas y consolidado de la semana (lunes a domingo) que contiene `date`. */
+    async week(employeeId: number, date: DateKey): Promise<WeekView> {
+      const weekStart = weekStartOf(date)
+      const weekEnd = addDays(weekStart, 6)
+      const pool = await getPool(db)
+
+      const [entries, holidays] = await Promise.all([
+        pool
+          .request()
+          .input('employeeId', sql.Int, employeeId)
+          .input('from', sql.Date, weekStart)
+          .input('to', sql.Date, weekEnd)
+          .query<TimeEntry>(`
+            ${ENTRY_SELECT}
+            WHERE t.employee_id = @employeeId AND t.work_date BETWEEN @from AND @to
+            ORDER BY t.work_date`),
+        pool
+          .request()
+          .input('from', sql.Date, weekStart)
+          .input('to', sql.Date, weekEnd)
+          .query<{ date: DateKey }>(`
+            SELECT CONVERT(char(10), holiday_date, 23) AS date
+            FROM holidays WHERE holiday_date BETWEEN @from AND @to`),
+      ])
+
+      const hours = calculateWeek(
+        entries.recordset.map((entry) => ({
+          date: entry.workDate,
+          clockIn: entry.clockIn,
+          clockOut: entry.clockOut,
+          perDiem: entry.perDiem,
+        })),
+        new Set(holidays.recordset.map((holiday) => holiday.date)),
+      )
+      const hoursByDate = new Map(hours.days.map((day) => [day.date, day]))
+
+      const { days: _days, ...totals } = hours
+      return {
+        weekStart,
+        weekEnd,
+        status: weekStatus(entries.recordset),
+        totals,
+        days: entries.recordset.flatMap((entry) => {
+          const day = hoursByDate.get(entry.workDate)
+          if (!day) return []
+          const { date: _date, ...breakdown } = day
+          return [{ ...entry, ...breakdown }]
+        }),
+      }
+    },
+
+    /** Semanas en las que el empleado tiene jornadas (lunes de cada una), más la actual. */
+    async weeks(employeeId: number, timeZone: string): Promise<{ current: DateKey; weeks: DateKey[] }> {
+      const current = weekStartOf(localParts(now(), timeZone).date)
+      const pool = await getPool(db)
+      const result = await pool
+        .request()
+        .input('employeeId', sql.Int, employeeId)
+        .query<{ date: DateKey }>(`
+          SELECT DISTINCT CONVERT(char(10), work_date, 23) AS date
+          FROM time_entries WHERE employee_id = @employeeId`)
+      const weeks = new Set(result.recordset.map((row) => weekStartOf(row.date)))
+      weeks.add(current)
+      // De la más reciente a la más antigua.
+      return { current, weeks: [...weeks].sort().reverse() }
+    },
+
+    /** Comentario de una jornada propia, mientras no esté aprobada. */
+    async setEntryComment(employeeId: number, entryId: number, comment: string | null): Promise<void> {
+      const pool = await getPool(db)
+      const found = await pool
+        .request()
+        .input('id', sql.Int, entryId)
+        .input('employeeId', sql.Int, employeeId)
+        .query<{ status: EntryStatus }>('SELECT status FROM time_entries WHERE id = @id AND employee_id = @employeeId')
+      const entry = found.recordset[0]
+      // Una jornada ajena se trata igual que una que no existe.
+      if (!entry) throw new TimesheetError(404, 'Jornada no encontrada')
+      if (entry.status === 'approved') {
+        throw new TimesheetError(409, 'La jornada ya está aprobada y no se puede modificar')
+      }
+      await pool
+        .request()
+        .input('id', sql.Int, entryId)
+        .input('comment', sql.NVarChar(1000), comment)
+        .query('UPDATE time_entries SET comment = @comment, updated_at = SYSUTCDATETIME() WHERE id = @id')
+    },
 
     /** Fichar entrada. La hora la pone el servidor. Un solo registro por día. */
     async clockIn(employeeId: number, timeZone: string, input: ClockInInput): Promise<TodayView> {
