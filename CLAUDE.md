@@ -109,7 +109,7 @@ Los nombres de grupos e IDs se configuran por variables de entorno, nunca en el 
 - Logo de Revergy en la cabecera.
 - Limpio, **responsive** (el fichaje se usa sobre todo desde el **móvil**) y con **modo claro/oscuro**.
 - Los colores se definen como variables CSS (tokens) en un único lugar.
-- Carcasa común: cabecera, menú lateral según el rol del usuario, área de contenido.
+- Carcasa común: cabecera y área de contenido. **Sin menú lateral**: el menú es la pantalla de inicio «Módulos de la Plataforma», una rejilla de tarjetas igual a la pantalla `homeModulos` de la Power App (1/2/3 columnas según el ancho). El logo de la cabecera vuelve al inicio. Los módulos se declaran en `web/src/navigation/modules.ts`; los no construidos se muestran como «Próximamente».
 
 ## Motor de aprobaciones (genérico)
 
