@@ -101,7 +101,7 @@ export const MODULES: AppModule[] = [
   {
     num: '10',
     title: 'Incremento Salarial / Puesto',
-    description: 'Solicitudes de incremento salarial o cambio de puesto.',
+    description: 'Solicitudes de incremento de salario y/o cambio de puesto con flujo de aprobación.',
     icon: TrendingUp,
     path: '/incrementos',
     available: false,

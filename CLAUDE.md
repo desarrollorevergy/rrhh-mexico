@@ -15,7 +15,7 @@ Este archivo da contexto a Claude Code en cada sesión. Mantenlo actualizado cua
 
 ## Qué es el proyecto
 
-Portal web de Recursos Humanos para Revergy México. Sustituye a una Power App con listas de SharePoint. El documento funcional completo está en `docs/Plataforma-Digital-RRHH.pdf` (léelo cuando necesites detalle de un módulo).
+Portal web de Recursos Humanos para Revergy México. Sustituye a una Power App con listas de SharePoint. El documento funcional completo está en `docs/Plataforma RRHH.pdf` (léelo cuando necesites detalle de un módulo).
 
 ### Módulos (11)
 

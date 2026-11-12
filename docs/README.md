@@ -2,4 +2,4 @@
 
 Documento funcional y decisiones del proyecto.
 
-- `Plataforma-Digital-RRHH.pdf` — documento funcional completo (pendiente de copiar aquí).
+- `Plataforma RRHH.pdf` — documento funcional completo (presentación v1.0, agosto 2026).
