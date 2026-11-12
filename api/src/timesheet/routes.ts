@@ -3,6 +3,7 @@ import { isValidDate } from '../admin/validation.js'
 import { getActor, requireEmployee, type Actor } from '../auth/employee.js'
 import { requireRole } from '../auth/middleware.js'
 import type { DbConfig } from '../config/env.js'
+import { parseCorrection } from './corrections.js'
 import { parseReject, parseWeekAction, type TeamService } from './team.js'
 import { parseClockIn, parseComment, parseTimeZone, TimesheetError, type TimesheetService } from './service.js'
 
@@ -80,6 +81,29 @@ export function timesheetRouter(db: DbConfig, service: TimesheetService, team: T
         throw new TimesheetError(400, 'Semana no válida')
       }
       return team.detail(actor.employeeId, employeeId, date)
+    }),
+  )
+
+  router.get(
+    '/team/week/history',
+    supervisor,
+    handle((actor, req) => {
+      const employeeId = Number(req.query.employeeId)
+      const date = req.query.date
+      if (!Number.isInteger(employeeId) || typeof date !== 'string' || !isValidDate(date)) {
+        throw new TimesheetError(400, 'Semana no válida')
+      }
+      return team.history(actor.employeeId, employeeId, date)
+    }),
+  )
+
+  router.put(
+    '/team/entries/:id',
+    supervisor,
+    handle((actor, req) => {
+      const id = Number(req.params.id)
+      if (!Number.isInteger(id) || id <= 0) throw new TimesheetError(404, 'Jornada no encontrada')
+      return team.correct(actor, id, parseCorrection(req.body))
     }),
   )
 

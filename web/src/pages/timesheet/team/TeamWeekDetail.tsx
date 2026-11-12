@@ -1,5 +1,6 @@
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Pencil } from 'lucide-react'
 import { useState } from 'react'
+import { CorrectEntryDialog } from '../CorrectEntryDialog.tsx'
 import {
   addDaysKey,
   formatMinutes,
@@ -10,8 +11,10 @@ import {
   teamApi,
   weekLabel,
   type TeamWeekDetail as Detail,
+  type WeekDay,
 } from '../api.ts'
 import { RejectDialog } from './RejectDialog.tsx'
+import { WeekHistory } from './WeekHistory.tsx'
 
 interface Props {
   week: Detail
@@ -42,6 +45,9 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [rejecting, setRejecting] = useState(false)
+  const [correcting, setCorrecting] = useState<WeekDay | null>(null)
+  // Cambia con cada acción para que el historial se vuelva a cargar.
+  const [historyVersion, setHistoryVersion] = useState(0)
 
   const byDate = new Map(week.days.map((day) => [day.workDate, day]))
   const dates = Array.from({ length: 7 }, (_, index) => addDaysKey(week.weekStart, index))
@@ -53,6 +59,8 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
     try {
       onChange(await action())
       setRejecting(false)
+      setCorrecting(null)
+      setHistoryVersion((version) => version + 1)
     } catch (cause) {
       setError(messageOf(cause))
     } finally {
@@ -118,7 +126,7 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
           </p>
         )}
 
-        {error && !rejecting && (
+        {error && !rejecting && !correcting && (
           <p role="alert" className="mt-3 rounded-lg bg-red-100 px-3 py-2 text-sm font-medium text-red-800">
             {error}
           </p>
@@ -147,6 +155,7 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
               <th className="px-3 py-2 text-right font-semibold">Extra</th>
               <th className="px-3 py-2 text-right font-semibold">Total</th>
               <th className="px-3 py-2 font-semibold">Detalles</th>
+              <th className="px-3 py-2" aria-label="Acciones" />
             </tr>
           </thead>
           <tbody>
@@ -156,7 +165,7 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
                 return (
                   <tr key={date} className="border-b border-border text-faint last:border-0">
                     <td className="px-3 py-2 first-letter:uppercase">{dayLabel(date)}</td>
-                    <td colSpan={7} className="px-3 py-2">Sin registro</td>
+                    <td colSpan={8} className="px-3 py-2">Sin registro</td>
                   </tr>
                 )
               }
@@ -171,6 +180,9 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
                   <td className="px-3 py-2 whitespace-nowrap tabular-nums">
                     {formatTime(day.clockIn)} – {day.clockOut ? formatTime(day.clockOut) : '…'}
                     {!day.complete && <span className={`${TAG} ml-1.5 bg-amber-100 text-amber-800`}>En curso</span>}
+                    {day.hoursEdited && (
+                      <span className="ml-1.5 text-xs text-muted" title="Horario corregido a mano (ver historial)">editado</span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatMinutes(day.normal)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatMinutes(day.extra)}</td>
@@ -186,12 +198,39 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
                     {day.rejectReason && <p className="mt-1 text-xs text-red-700">{day.rejectReason}</p>}
                     {day.comment && <p className="mt-1 text-xs text-muted">«{day.comment}»</p>}
                   </td>
+                  <td className="px-2 py-1.5 text-right">
+                    <button
+                      type="button"
+                      title="Corregir jornada"
+                      aria-label={`Corregir la jornada del ${dayLabel(date)}`}
+                      disabled={saving}
+                      onClick={() => {
+                        setError(null)
+                        setCorrecting(day)
+                      }}
+                      className="cursor-pointer rounded-lg p-2 text-secondary hover:bg-accent-soft-strong disabled:opacity-50"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                  </td>
                 </tr>
               )
             })}
           </tbody>
         </table>
       </div>
+
+      <WeekHistory key={historyVersion} employeeId={week.employeeId} weekStart={week.weekStart} />
+
+      {correcting && (
+        <CorrectEntryDialog
+          day={correcting}
+          saving={saving}
+          error={error}
+          onClose={() => setCorrecting(null)}
+          onSave={(changes) => void run(() => teamApi.correct(correcting.id, changes))}
+        />
+      )}
 
       {rejecting && (
         <RejectDialog

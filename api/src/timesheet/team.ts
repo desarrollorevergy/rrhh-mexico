@@ -4,6 +4,7 @@ import { ApprovalError } from '../approvals/types.js'
 import type { Actor } from '../auth/employee.js'
 import type { DbConfig } from '../config/env.js'
 import { getPool } from '../db/pool.js'
+import { createCorrections, type ChangeSet, type CorrectionInput } from './corrections.js'
 import { addDays, weekStartOf, type DateKey } from './hours.js'
 import {
   buildWeek,
@@ -46,6 +47,19 @@ export interface TeamWeekDetail extends TeamMember, WeekView {
   correctionNote: string | null
 }
 
+/** Un movimiento del historial de una semana. */
+export interface HistoryItem {
+  kind: 'approved' | 'rejected' | 'resubmitted' | 'corrected_supervisor' | 'corrected_employee'
+  actorName: string
+  at: Date
+  /** Motivo del rechazo o nota del reenvío. */
+  reason: string | null
+  /** Día corregido (solo en correcciones). */
+  workDate: DateKey | null
+  /** Campos cambiados, con el valor anterior y el nuevo (solo en correcciones). */
+  changes: ChangeSet | null
+}
+
 type TeamEntryRow = TimeEntry & TeamMember
 
 const APPROVAL_STATUS: Partial<Record<ApprovalError['code'], number>> = { not_allowed: 403, reason_required: 400 }
@@ -74,6 +88,7 @@ export function parseReject(body: unknown): { rejectedEntryIds: number[]; reason
 
 export function createTeamService(options: { db: DbConfig; approvals: ApprovalService }) {
   const { db, approvals } = options
+  const corrections = createCorrections(db)
 
   /** Jornadas de los subordinados directos, opcionalmente de una semana o de una persona. */
   async function teamEntries(
@@ -187,6 +202,84 @@ export function createTeamService(options: { db: DbConfig; approvals: ApprovalSe
 
   return {
     detail,
+
+    /**
+     * El supervisor corrige una jornada de su equipo (horas, analítica, tipo o dieta).
+     * Queda en el historial. Devuelve la semana ya actualizada.
+     */
+    async correct(actor: Actor, entryId: number, input: CorrectionInput): Promise<TeamWeekDetail> {
+      const pool = await getPool(db)
+      const found = await pool
+        .request()
+        .input('id', sql.Int, entryId)
+        .input('supervisorId', sql.Int, actor.employeeId)
+        .query<{ employeeId: number; workDate: DateKey }>(`
+          SELECT t.employee_id AS employeeId, CONVERT(char(10), t.work_date, 23) AS workDate
+          FROM time_entries AS t JOIN employees AS e ON e.id = t.employee_id
+          WHERE t.id = @id AND e.supervisor_id = @supervisorId`)
+      const entry = found.recordset[0]
+      // La jornada de alguien que no es de su equipo se trata como si no existiera.
+      if (!entry) throw new TimesheetError(404, 'Jornada no encontrada')
+
+      await corrections.apply(entryId, input, actor.employeeId, 'supervisor')
+      return detail(actor.employeeId, entry.employeeId, entry.workDate)
+    },
+
+    /**
+     * Historial de la semana, del más reciente al más antiguo: decisiones de validación
+     * (del motor de aprobaciones) y correcciones de jornadas.
+     */
+    async history(supervisorId: number, employeeId: number, date: DateKey): Promise<HistoryItem[]> {
+      const weekStart = weekStartOf(date)
+      await loadWeek(supervisorId, employeeId, weekStart) // comprueba que es de su equipo
+      const pool = await getPool(db)
+
+      const [decisions, changes] = await Promise.all([
+        pool
+          .request()
+          .input('type', sql.NVarChar(50), REQUEST_TYPE)
+          .input('entityId', sql.NVarChar(50), `${employeeId}:${weekStart}`)
+          .query<{ action: string; actorName: string; reason: string | null; at: Date }>(`
+            SELECT a.action, e.full_name AS actorName, a.reason, a.created_at AS at
+            FROM approval_actions AS a
+            JOIN approval_requests AS r ON r.id = a.request_id
+            JOIN employees AS e ON e.id = a.actor_id
+            WHERE r.request_type = @type AND r.entity_id = @entityId
+              AND a.action IN ('approved', 'rejected', 'resubmitted')`),
+        pool
+          .request()
+          .input('employeeId', sql.Int, employeeId)
+          .input('from', sql.Date, weekStart)
+          .input('to', sql.Date, addDays(weekStart, 6))
+          .query<{ source: string; actorName: string; workDate: DateKey; changes: string; at: Date }>(`
+            SELECT c.source, e.full_name AS actorName, CONVERT(char(10), t.work_date, 23) AS workDate,
+                   c.changes, c.created_at AS at
+            FROM time_entry_changes AS c
+            JOIN time_entries AS t ON t.id = c.entry_id
+            JOIN employees AS e ON e.id = c.actor_id
+            WHERE t.employee_id = @employeeId AND t.work_date BETWEEN @from AND @to`),
+      ])
+
+      const items: HistoryItem[] = [
+        ...decisions.recordset.map((row) => ({
+          kind: row.action as HistoryItem['kind'],
+          actorName: row.actorName,
+          at: row.at,
+          reason: row.reason,
+          workDate: null,
+          changes: null,
+        })),
+        ...changes.recordset.map((row) => ({
+          kind: (row.source === 'supervisor' ? 'corrected_supervisor' : 'corrected_employee') as HistoryItem['kind'],
+          actorName: row.actorName,
+          at: row.at,
+          reason: null,
+          workDate: row.workDate,
+          changes: JSON.parse(row.changes) as ChangeSet,
+        })),
+      ]
+      return items.sort((a, b) => b.at.getTime() - a.at.getTime())
+    },
 
     /** Consolidado semanal del equipo: una fila por colaborador y semana. */
     async summary(supervisorId: number): Promise<TeamWeekSummary[]> {

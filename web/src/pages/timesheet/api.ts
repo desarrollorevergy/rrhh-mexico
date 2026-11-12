@@ -175,4 +175,47 @@ export const teamApi = {
     apiPost<TeamWeekDetail>('/api/timesheet/team/week/approve', { employeeId, weekStart }),
   reject: (employeeId: number, weekStart: string, rejectedEntryIds: number[], reason: string) =>
     apiPost<TeamWeekDetail>('/api/timesheet/team/week/reject', { employeeId, weekStart, rejectedEntryIds, reason }),
+  correct: (entryId: number, changes: EntryCorrection) =>
+    apiPut<TeamWeekDetail>(`/api/timesheet/team/entries/${entryId}`, changes),
+  history: (employeeId: number, weekStart: string) =>
+    apiGet<HistoryItem[]>(`/api/timesheet/team/week/history?employeeId=${employeeId}&date=${weekStart}`),
+}
+
+/** Cambios de una corrección. Solo se envían los campos que cambian; las horas, como instantes ISO. */
+export interface EntryCorrection {
+  projectId?: number
+  shiftType?: ShiftType
+  perDiem?: boolean
+  clockIn?: string
+  clockOut?: string
+}
+
+/** Un movimiento del historial de una semana. */
+export interface HistoryItem {
+  kind: 'approved' | 'rejected' | 'resubmitted' | 'corrected_supervisor' | 'corrected_employee'
+  actorName: string
+  at: string
+  reason: string | null
+  workDate: string | null
+  changes: Record<string, { from: unknown; to: unknown }> | null
+}
+
+/** «HH:MM» local de un instante ISO, para un campo de hora. */
+export function toTimeInput(iso: string | null): string {
+  if (!iso) return ''
+  const date = new Date(iso)
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+/**
+ * Combina el día de la jornada con horas «HH:MM» locales. Si la salida no es posterior
+ * a la entrada, se entiende que la jornada terminó al día siguiente.
+ */
+export function buildSchedule(workDate: string, timeIn: string, timeOut: string): { clockIn: Date; clockOut: Date | null; nextDay: boolean } {
+  const clockIn = new Date(`${workDate}T${timeIn}:00`)
+  if (!timeOut) return { clockIn, clockOut: null, nextDay: false }
+  const clockOut = new Date(`${workDate}T${timeOut}:00`)
+  const nextDay = clockOut <= clockIn
+  if (nextDay) clockOut.setDate(clockOut.getDate() + 1)
+  return { clockIn, clockOut, nextDay }
 }
