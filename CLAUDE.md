@@ -59,7 +59,8 @@ Una sola aplicación: Express sirve el front compilado (`web/dist`) y la API baj
 - El **build se hace en GitHub Actions** y se sube ya compilado; App Service no compila (`SCM_DO_BUILD_DURING_DEPLOYMENT=false`) y arranca con `npm start` desde la raíz del paquete.
 - El paquete desplegado lleva solo: `package.json` raíz, `api/package.json`, `api/dist`, `api/node_modules` (sin devDependencies) y `web/dist`.
 - Orden de rutas en `api/src/app.ts`: rutas `/api` → 404 JSON para cualquier `/api/*` inexistente → archivos de `web/dist` → `index.html` para el resto (lo resuelve el router del front). Con Express 5 el comodín se escribe `/{*splat}`, no `*`.
-- El workflow de GitHub Actions **aún no está creado**.
+- El `build` de la raíz instala `web/` y `api/` antes de compilar, porque el workflow que genera el Centro de implementación de Azure solo ejecuta `npm install`, `npm run build` y `npm run test` en la raíz.
+- El workflow de GitHub Actions **aún no está creado**. Cuando exista, queda pendiente recortar el paquete (hoy subiría también las devDependencies).
 
 ### Estructura del repo
 
@@ -86,8 +87,8 @@ cd web; npm run dev
 # http://localhost:5173/api/health
 
 # Como en producción (desde la raíz): un solo servidor en el puerto 3000
-npm run install:all   # instala web/ y api/
-npm run build         # compila web/dist y api/dist
+npm run build         # instala web/ y api/ (install:all) y compila web/dist y api/dist
+npm test              # pruebas de la API
 npm start             # node api/dist/server.js
 # Pruebas de la API
 cd api; npm test
