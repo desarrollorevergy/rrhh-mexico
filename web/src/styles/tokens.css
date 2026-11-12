@@ -1,0 +1,65 @@
+/*
+ * Tokens de diseño de Revergy. ÚNICO lugar donde se definen colores y tipografía.
+ * Los componentes usan las clases de Tailwind que salen de aquí (bg-surface, text-muted...).
+ */
+
+/* Marca */
+@theme {
+  --color-brand-blue: #456099;
+  --color-brand-green: #71a971;
+  --color-brand-gray: #393536;
+
+  --font-sans: 'Inter Variable', system-ui, 'Segoe UI', sans-serif;
+}
+
+/* Modo claro (valores de la pantalla de módulos de la Power App) */
+:root {
+  color-scheme: light;
+
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --border: #e5e7eb;
+  --text: #1f2937;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
+  --text-faint: #9ca3af;
+  --accent: var(--color-brand-blue);
+  --accent-soft: rgb(69 96 153 / 0.06);
+  --accent-soft-strong: rgb(69 96 153 / 0.12);
+
+  --gradient-brand: linear-gradient(135deg, var(--color-brand-green) 0%, var(--color-brand-blue) 100%);
+}
+
+/* Modo oscuro */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #14171c;
+  --surface: #1e2228;
+  --border: #2f353d;
+  --text: #f3f4f6;
+  --text-secondary: #d1d5db;
+  --text-muted: #9ca3af;
+  --text-faint: #6b7280;
+  --accent: #8fa9dc;
+  --accent-soft: rgb(143 169 220 / 0.08);
+  --accent-soft-strong: rgb(143 169 220 / 0.16);
+}
+
+/* Colores semánticos expuestos a Tailwind */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-strong: var(--accent-soft-strong);
+}
+
+@utility bg-brand-gradient {
+  background-image: var(--gradient-brand);
+}
