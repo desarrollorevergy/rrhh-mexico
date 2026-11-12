@@ -35,7 +35,7 @@ Portal web de Recursos Humanos para Revergy México. Sustituye a una Power App c
 
 ### Fases
 
-- **Fase 0 (actual):** base del proyecto: estructura, carcasa visual (hecha y en producción), autenticación simulada en local, base de datos local, motor de aprobaciones genérico.
+- **Fase 0 (terminada en código el 2026-11-12):** base del proyecto: estructura, carcasa visual, autenticación (en producción), base de datos local y motor de aprobaciones genérico. En Azure faltan la base de datos y los grupos de Entra ID para los roles.
 - **Fase 1:** Parte de Horas + Ficha de Empleado básica (lo mínimo que necesita el parte de horas). Migrar datos de la Power App.
 - Después, por dependencias: Vacaciones e Incremento → Bajas → Perfiles + Contratación + CVs → Onboarding → Nómina → Buzón.
 
@@ -240,6 +240,7 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 8. **Rol SuperAdmin:** existe en la Power App (lista `MatrizRoles`) y no en la tabla de roles de este archivo.
 9. **Identificación del empleado:** ¿se enlaza el usuario de Entra ID con la ficha por correo (como la Power App) o por ID de objeto de Entra?
 10. **Redondeo a medias horas:** el prototipo `parte-horas` redondea las horas del día a .0/.5. ¿Es una regla real?
+11. **Aprobar la propia solicitud:** el motor de aprobaciones lo impide (por ejemplo, alguien de RRHH no puede dar la aprobación de RRHH a su propia solicitud). Es una regla asumida, no está en el documento. ¿Es correcta? Si lo es, ¿quién aprueba en ese caso?
 
 Cuando se resuelva una duda, muévela a la sección correspondiente como regla.
 
