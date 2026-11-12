@@ -205,13 +205,13 @@ Es el módulo que se presentará como terminado. Debe quedar **igual que la app 
 3. Fichaje con conexión — **hecha**: tabla `time_entries` (migración 005), API en `api/src/timesheet/` (`/api/timesheet/today`, `clock-in`, `clock-out`, `today/comment`) y pantalla `/parte-horas` (`web/src/pages/timesheet/`). La tarjeta 01 está disponible para todos.
 4. Mi semana — **hecha**: `/parte-horas/semana` con selector de semana, estado, totales y una tarjeta por día con su nota; menú inferior «Fichar / Mi Semana» (`TimesheetLayout`). API: `/api/timesheet/weeks`, `/week?date=` y `/entries/:id/comment`. Las horas se muestran como `h:mm`.
 5. Supervisión — **hecha**: consolidado del equipo con filtros, detalle día por día, aprobar, rechazar marcando días, corregir jornadas e historial (`/parte-horas/equipo`; API `/api/timesheet/team/*`; `api/src/timesheet/team.ts`).
-   - **Corrección** (`api/src/timesheet/corrections.ts`, `PUT /team/entries/:id`): horario, analítica, tipo y dieta. Cada corrección guarda el antes y el después en `time_entry_changes` (migración 007). Si cambian las horas, el día queda marcado como «editado». **Corregir un día ya aprobado lo devuelve a pendiente.** Límites: salida posterior a la entrada y jornada de 24 h como máximo.
+   - **Corrección** (`api/src/timesheet/corrections.ts`, `PUT /team/entries/:id`): horario, analítica, tipo y dieta. Cada corrección guarda el antes y el después en `time_entry_changes` (migración 007). Si cambian las horas, el día queda marcado como «editado». **Corregir un día ya aprobado lo devuelve a pendiente** (confirmado el 2026-11-13). Límites: salida posterior a la entrada y jornada de 24 h como máximo.
    - Las horas corregidas viajan como instantes completos calculados en el dispositivo; una salida anterior a la entrada se entiende del día siguiente.
    - **Historial** (`GET /team/week/history`): une las decisiones del motor de aprobaciones con las correcciones, de la más reciente a la más antigua.
    - El supervisor solo ve y valida a quienes lo tienen como `supervisor_id` (equipo directo). Los demás responden 404.
    - Cada decisión se registra en el motor de aprobaciones (tipo `timesheet_week`, entidad `empleado:lunes`): comprueba que decide el supervisor y guarda el historial. Cada ronda de revisión es una solicitud; se reutiliza la pendiente o se abre una nueva.
    - El estado actual de cada día vive en `time_entries` (migración 006: motivo, quién revisó, corrección enviada).
-   - **Regla añadida, a confirmar:** no se puede aprobar una semana con una jornada sin salida; hay que rechazarla para que se corrija.
+   - **Regla confirmada (2026-11-13):** no se puede aprobar una semana con una jornada sin salida; hay que corregirla o rechazarla antes.
    - La decisión del motor y el cambio de estado de los días se guardan en dos pasos; si el segundo fallara, basta repetir la acción.
 6. Corrección y reenvío.
 7. RRHH: semanas aprobadas y CSV de nómina.

@@ -79,6 +79,14 @@ describe('loadConfig', () => {
     expect(config.groupIds.rrhh).toBe('dev-group-rrhh')
   })
 
+  it('las migraciones al arrancar solo se activan si se pide y hay base de datos', () => {
+    const dbEnv = { DB_SERVER: 'servidor', DB_NAME: 'rrhh', DB_USER: 'app', DB_PASSWORD: 'x' }
+    expect(loadConfig(dbEnv).migrateOnStart).toBeUndefined()
+    expect(loadConfig({ ...dbEnv, DB_MIGRATE_ON_START: 'true' }).migrateOnStart).toBe(true)
+    expect(loadConfig({ DB_MIGRATE_ON_START: 'true' })).toEqual({ devAuth: false, groupIds: {} })
+    expect(() => loadConfig({ DB_SERVER: 'servidor' })).toThrow('DB_NAME')
+  })
+
   it('se niega a arrancar con autenticación simulada en producción', () => {
     expect(() => loadConfig({ DEV_AUTH: 'true', NODE_ENV: 'production' })).toThrow()
   })

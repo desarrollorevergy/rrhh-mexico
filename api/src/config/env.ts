@@ -30,6 +30,8 @@ export interface AppConfig {
   groupIds: Partial<Record<GroupRole, string>>
   /** Conexión a la base de datos. Sin configurar, la app arranca sin base de datos. */
   db?: DbConfig
+  /** Aplicar las migraciones pendientes al arrancar. Pensado para Azure. */
+  migrateOnStart?: boolean
 }
 
 function loadDbConfig(env: NodeJS.ProcessEnv): DbConfig | undefined {
@@ -75,5 +77,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
 
   const db = loadDbConfig(env)
-  return db ? { devAuth, groupIds, db } : { devAuth, groupIds }
+  if (!db) return { devAuth, groupIds }
+  return env.DB_MIGRATE_ON_START === 'true' ? { devAuth, groupIds, db, migrateOnStart: true } : { devAuth, groupIds, db }
 }
