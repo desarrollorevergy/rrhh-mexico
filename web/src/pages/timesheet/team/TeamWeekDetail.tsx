@@ -5,6 +5,7 @@ import {
   addDaysKey,
   formatMinutes,
   formatTime,
+  offlineLabel,
   parseDateKey,
   STATUS_LABELS,
   STATUS_STYLES,
@@ -186,6 +187,14 @@ export function TeamWeekDetail({ week, onChange, onBack, readOnly = false, backL
                     {!day.complete && <span className={`${TAG} ml-1.5 bg-amber-100 text-amber-800`}>En curso</span>}
                     {day.hoursEdited && (
                       <span className="ml-1.5 text-xs text-muted" title="Horario corregido a mano (ver historial)">editado</span>
+                    )}
+                    {offlineLabel(day) && (
+                      <span
+                        className={`${TAG} ml-1.5 bg-amber-100 text-amber-800`}
+                        title="La hora la puso el dispositivo, no el servidor"
+                      >
+                        {offlineLabel(day)}
+                      </span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatMinutes(day.normal)}</td>

@@ -50,6 +50,14 @@ export class ApiError extends Error {
   }
 }
 
+/** No se pudo llegar al servidor: el dispositivo no tiene red (o la tiene sin datos). */
+export class NetworkError extends Error {
+  constructor() {
+    super('Sin conexión. Inténtalo de nuevo cuando tengas red.')
+    this.name = 'NetworkError'
+  }
+}
+
 export function apiGet<T>(path: string): Promise<T> {
   return apiRequest<T>('GET', path)
 }
@@ -88,11 +96,19 @@ async function send(method: string, path: string, body?: unknown): Promise<Respo
     if (devUser) headers['X-Dev-User'] = devUser
   }
 
-  const res = await fetch(path, {
-    method,
-    headers,
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
+  let res: Response
+  try {
+    res = await fetch(path, {
+      method,
+      headers,
+      // La API nunca redirige: una redirección es App Service mandando a iniciar sesión.
+      redirect: 'manual',
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    })
+  } catch {
+    throw new NetworkError()
+  }
+  if (res.type === 'opaqueredirect') throw new ApiError(401, 'Tu sesión ha caducado. Vuelve a entrar.')
   if (!res.ok) {
     let message = `Error ${res.status}`
     try {

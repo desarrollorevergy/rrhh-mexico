@@ -10,6 +10,7 @@ import {
   parseClockIn,
   parseComment,
   parseNote,
+  parseOfflineSync,
   parseTimeZone,
   TimesheetError,
   type TimesheetService,
@@ -94,6 +95,12 @@ export function timesheetRouter(db: DbConfig, service: TimesheetService, team: T
   )
 
   router.post('/clock-out', handle((actor, req) => service.clockOut(actor.employeeId, timeZoneOf(req))))
+
+  // Fichajes hechos sin conexión: llevan la hora del dispositivo y quedan marcados.
+  router.post(
+    '/sync',
+    handle((actor, req) => service.syncOffline(actor.employeeId, timeZoneOf(req), parseOfflineSync(req.body))),
+  )
 
   router.put(
     '/today/comment',

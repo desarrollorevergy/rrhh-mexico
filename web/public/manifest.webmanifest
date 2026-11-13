@@ -1,0 +1,16 @@
+{
+  "name": "RRHH · Revergy México",
+  "short_name": "RRHH Revergy",
+  "description": "Plataforma de Recursos Humanos de Revergy México. El parte de horas permite fichar sin conexión.",
+  "lang": "es-MX",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#456099",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

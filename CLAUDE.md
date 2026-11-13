@@ -36,7 +36,7 @@ El módulo «Incremento Salarial / Puesto» del documento funcional **se retiró
 
 ### Fases
 
-- **Fase 0 (terminada en código el 2026-11-12):** base del proyecto: estructura, carcasa visual, autenticación (en producción), base de datos local y motor de aprobaciones genérico. En Azure la base de datos se creó el 2026-11-12; faltan los grupos de Entra ID para los roles y desplegar el código que la usa.
+- **Fase 0 (terminada en código el 2026-11-12):** base del proyecto: estructura, carcasa visual, autenticación (en producción), base de datos local y motor de aprobaciones genérico. En Azure la base de datos se creó el 2026-11-12 y los grupos de Entra ID para los roles ya funcionan (2026-11-13).
 - **Fase 1:** Parte de Horas + Ficha de Empleado básica (lo mínimo que necesita el parte de horas). Migrar datos de la Power App.
 - Después, por dependencias: Vacaciones → Bajas → Perfiles + Contratación + CVs → Onboarding → Nómina → Buzón.
 
@@ -82,7 +82,8 @@ GitHub Actions despliega en producción en cada push a `main`. El detalle (paque
 - **Front** (`web/src/auth/`): `AuthProvider` carga `/api/me` antes de mostrar la app; `useAuth()` da el usuario. El selector `web/src/dev/DevUserSwitcher.tsx` solo se carga con `import.meta.env.DEV`.
 - **Ficha automática (2026-11-13):** quien entra al Parte de Horas sin ficha recibe una básica en ese momento (`ensureEmployee` en `api/src/db/employees.ts`): nombre y correo de su cuenta, número provisional `AUTO-<id>`, sin supervisor ni departamento. Puede fichar enseguida, pero **sus semanas no las puede validar nadie salvo el administrador** hasta que RRHH le asigne supervisor. Una ficha dada de baja no se reactiva sola. Cualquier cuenta M365 del inquilino que entre al módulo genera ficha.
 - **Supervisor "por datos":** sale de la tabla `employees` (`api/src/db/employees.ts`): lo es quien tiene empleados activos con su `supervisor_id`. En producción nadie lo es hasta que exista la base de datos en Azure.
-- **Pendiente:** en producción (con base de datos conectada desde el 2026-11-13) todos son solo Colaborador hasta que se creen los grupos de Entra ID, el registro de aplicación emita el claim `groups` y se definan las variables `ENTRA_GROUP_*` en el App Service. El menú de módulos aún no se filtra por rol.
+- **Roles en producción:** los grupos de Entra ID están creados y funcionando (confirmado por el usuario el 2026-11-13), con la base de datos conectada desde ese día.
+- **Pendiente:** el menú de módulos aún no se filtra por rol.
 
 ### Roles
 
@@ -172,11 +173,11 @@ Es el módulo que se presentará como terminado. Debe quedar **igual que la app 
 5. Supervisión — **hecha**.
 6. Corrección y reenvío — **hecha**.
 7. RRHH: semanas aprobadas y CSV de nómina — **hecha**. **El formato del CSV no está validado con quien hace la nómina.**
-8. Sin conexión (PWA).
+8. Sin conexión (PWA) — **hecha en código el 2026-11-13; falta probarla en un teléfono real y con Easy Auth en producción.**
 9. Orden de trabajo (Azure Blob) y avisos push.
 10. Producción: Azure SQL, migraciones en el despliegue, grupos de roles, empleados reales.
 
-El detalle de las etapas 3 a 7 (rutas, tablas y reglas confirmadas) está en `api/src/timesheet/CLAUDE.md`, que se carga al trabajar en esa carpeta. **Léelo antes de cambiar pantallas del Parte de Horas en `web/`.**
+El detalle de las etapas 3 a 8 (rutas, tablas y reglas confirmadas) está en `api/src/timesheet/CLAUDE.md`, que se carga al trabajar en esa carpeta. **Léelo antes de cambiar pantallas del Parte de Horas en `web/`.**
 
 ### Importar datos de la app anterior
 

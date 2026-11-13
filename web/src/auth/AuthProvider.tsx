@@ -1,6 +1,26 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { ApiError, apiGet, getDevUser, setDevUser } from '../api/client.ts'
+import { ApiError, apiGet, getDevUser, NetworkError, setDevUser } from '../api/client.ts'
 import { AuthContext, type CurrentUser } from './authContext.ts'
+
+const CACHED_USER_KEY = 'auth.me'
+
+/** Usuario de la última vez que hubo red. Solo sirve para pintar la app: la API comprueba todo de nuevo. */
+function cachedUser(): CurrentUser | null {
+  try {
+    const raw = localStorage.getItem(CACHED_USER_KEY)
+    return raw ? (JSON.parse(raw) as CurrentUser) : null
+  } catch {
+    return null
+  }
+}
+
+function rememberUser(user: CurrentUser): void {
+  try {
+    localStorage.setItem(CACHED_USER_KEY, JSON.stringify(user))
+  } catch {
+    // Sin almacenamiento: la app no se podrá abrir sin red.
+  }
+}
 
 type State = { status: 'loading' } | { status: 'ready'; user: CurrentUser } | { status: 'error' }
 
@@ -13,6 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     apiGet<CurrentUser>('/api/me')
       .then((user) => {
+        rememberUser(user)
         if (!cancelled) setState({ status: 'ready', user })
       })
       .catch((error: unknown) => {
@@ -23,7 +44,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           window.location.reload()
           return
         }
-        setState({ status: 'error' })
+        // Sin red: se entra con el usuario de la última vez, para poder fichar sin conexión.
+        const remembered = error instanceof NetworkError ? cachedUser() : null
+        setState(remembered ? { status: 'ready', user: remembered } : { status: 'error' })
       })
 
     return () => {
@@ -42,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         <p className="max-w-sm text-[15px] text-muted">
           {import.meta.env.DEV
             ? 'Comprueba que la API está arrancada (cd api; npm run dev) y que api/.env tiene DEV_AUTH=true.'
-            : 'Puede que tu sesión haya caducado.'}
+            : 'Puede que tu sesión haya caducado o que no tengas conexión.'}
         </p>
         <button
           type="button"
