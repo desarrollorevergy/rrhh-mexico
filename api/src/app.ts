@@ -1,9 +1,17 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import express, { type ErrorRequestHandler, type Express } from 'express'
+import { createAdminRepository } from './admin/repository.js'
+import { adminRouter } from './admin/routes.js'
+import { approvalsRouter } from './approvals/routes.js'
+import { createApprovalService } from './approvals/service.js'
 import { DEV_USERS, devIsSupervisor } from './auth/devUsers.js'
 import { authenticate, devAuth, getAuth, type SupervisorLookup } from './auth/middleware.js'
 import { loadConfig, type AppConfig } from './config/env.js'
+import { pingDb, supervisorLookupFromDb } from './db/employees.js'
+import { timesheetRouter } from './timesheet/routes.js'
+import { createTimesheetService } from './timesheet/service.js'
+import { createTeamService } from './timesheet/team.js'
 
 // Front compilado. La ruta vale igual en desarrollo (api/src, con tsx) y compilado
 // (api/dist): los dos están a dos niveles de la raíz del repo.
@@ -18,14 +26,20 @@ export interface AppOptions {
   isSupervisor?: SupervisorLookup
 }
 
-// Provisional hasta que exista la tabla de empleados (paso 3): nadie es supervisor.
 const noSupervisors: SupervisorLookup = async () => false
+
+// Supervisor "por datos": sale de la tabla de empleados. Sin base de datos configurada
+// se usa la jerarquía de prueba en local y, fuera de local, nadie es supervisor.
+function defaultSupervisorLookup(config: AppConfig): SupervisorLookup {
+  if (config.db) return supervisorLookupFromDb(config.db)
+  return config.devAuth ? devIsSupervisor : noSupervisors
+}
 
 // Se separa de server.ts para poder probar la app sin abrir un puerto.
 export function createApp(options: AppOptions = {}): Express {
   const webDist = options.webDist ?? DEFAULT_WEB_DIST
   const config = options.config ?? loadConfig()
-  const isSupervisor = options.isSupervisor ?? (config.devAuth ? devIsSupervisor : noSupervisors)
+  const isSupervisor = options.isSupervisor ?? defaultSupervisorLookup(config)
   const app = express()
 
   app.disable('x-powered-by')
@@ -49,8 +63,39 @@ export function createApp(options: AppOptions = {}): Express {
 
   app.get('/api/me', (_req, res) => {
     const { user, roles } = getAuth(res)
-    res.json({ id: user.id, name: user.name, email: user.email, roles })
+    // hasDatabase: sin base de datos configurada los módulos aún no están disponibles.
+    res.json({ id: user.id, name: user.name, email: user.email, roles, hasDatabase: Boolean(config.db) })
   })
+
+  // ¿Responde la base de datos? No da detalles del error.
+  app.get('/api/health/db', async (_req, res) => {
+    if (!config.db) {
+      res.status(503).json({ status: 'sin configurar' })
+      return
+    }
+    try {
+      await pingDb(config.db)
+      res.json({ status: 'ok' })
+    } catch {
+      res.status(503).json({ status: 'error' })
+    }
+  })
+
+  // Catálogos, administración y motor de aprobaciones. Necesitan la base de datos.
+  if (config.db) {
+    const approvals = createApprovalService({ db: config.db, includeDemo: config.devAuth })
+
+    app.use('/api', adminRouter(createAdminRepository(config.db)))
+    app.use(
+      '/api/timesheet',
+      timesheetRouter(
+        config.db,
+        createTimesheetService({ db: config.db, approvals }),
+        createTeamService({ db: config.db, approvals }),
+      ),
+    )
+    app.use('/api/approvals', approvalsRouter(config, config.db, approvals))
+  }
 
   // Cualquier /api que no exista responde 404 en JSON, nunca el index.html del front.
   app.use('/api', (_req, res) => {

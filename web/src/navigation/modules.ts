@@ -12,6 +12,7 @@ import {
   UserPlus,
   type LucideIcon,
 } from 'lucide-react'
+import type { Role } from '../auth/authContext.ts'
 
 export interface AppModule {
   num: string
@@ -22,6 +23,15 @@ export interface AppModule {
   path: string
   /** false = aún no construido: la tarjeta avisa «próximamente» y no navega. */
   available: boolean
+  /** Roles para los que el módulo ya está disponible aunque `available` sea false. */
+  availableFor?: Role[]
+}
+
+/** ¿Puede entrar ya este usuario al módulo? La API vuelve a comprobarlo. */
+export function isModuleAvailable(module: AppModule, user: { roles: Role[]; hasDatabase: boolean }): boolean {
+  // Sin base de datos en el servidor ningún módulo puede funcionar todavía.
+  if (!user.hasDatabase) return false
+  return module.available || (module.availableFor?.some((role) => user.roles.includes(role)) ?? false)
 }
 
 // Catálogo de los 11 módulos (numeración de CLAUDE.md).
@@ -32,7 +42,7 @@ export const MODULES: AppModule[] = [
     description: 'Registro diario de fichaje con validación semanal del supervisor.',
     icon: Clock,
     path: '/parte-horas',
-    available: false,
+    available: true,
   },
   {
     num: '02',
@@ -79,8 +89,10 @@ export const MODULES: AppModule[] = [
     title: 'Ficha de Empleado',
     description: 'Expediente digital del colaborador, gestionado por RRHH.',
     icon: User,
-    path: '/ficha',
+    path: '/empleados',
     available: false,
+    // De momento solo la administración básica de RRHH (alta de empleados y festivos).
+    availableFor: ['rrhh'],
   },
   {
     num: '08',

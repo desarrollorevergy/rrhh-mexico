@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiGet, setDevUser } from '../api/client.ts'
 import { useAuth } from '../auth/authContext.ts'
 
@@ -22,6 +23,14 @@ export default function DevUserSwitcher() {
   if (users.length === 0) return null
 
   return (
+    <>
+    <Link
+      to="/dev/aprobaciones"
+      title="Prueba del motor de aprobaciones (solo desarrollo)"
+      className="hidden text-sm font-semibold text-accent hover:underline min-[700px]:inline"
+    >
+      Aprobaciones
+    </Link>
     <select
       aria-label="Usuario de prueba (solo desarrollo)"
       title="Usuario de prueba (solo desarrollo)"
@@ -39,5 +48,6 @@ export default function DevUserSwitcher() {
         </option>
       ))}
     </select>
+    </>
   )
 }

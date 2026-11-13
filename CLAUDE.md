@@ -35,7 +35,7 @@ Portal web de Recursos Humanos para Revergy México. Sustituye a una Power App c
 
 ### Fases
 
-- **Fase 0 (actual):** base del proyecto: estructura, carcasa visual (hecha y en producción), autenticación simulada en local, base de datos local, motor de aprobaciones genérico.
+- **Fase 0 (terminada en código el 2026-11-12):** base del proyecto: estructura, carcasa visual, autenticación (en producción), base de datos local y motor de aprobaciones genérico. En Azure faltan la base de datos y los grupos de Entra ID para los roles.
 - **Fase 1:** Parte de Horas + Ficha de Empleado básica (lo mínimo que necesita el parte de horas). Migrar datos de la Power App.
 - Después, por dependencias: Vacaciones e Incremento → Bajas → Perfiles + Contratación + CVs → Onboarding → Nómina → Buzón.
 
@@ -45,7 +45,7 @@ Portal web de Recursos Humanos para Revergy México. Sustituye a una Power App c
 |---|---|
 | Front | React + Vite + TypeScript (`web/`) |
 | API | Node + Express 5 + TypeScript, ESM (`"type": "module"`, `NodeNext`), `tsx` en desarrollo (`api/`) |
-| Base de datos | Azure SQL Database. En local: SQL Server en Docker. Librería: `mssql`. Scripts SQL versionados en `db/` |
+| Base de datos | Azure SQL Database (aún no creada). En local: **SQL Server 2025 Developer instalado en Windows** (sin Docker), base `rrhh`, usuario de SQL `rrhh_app`. Librería: `mssql`. Scripts SQL versionados en `db/migrations/` |
 | Archivos | Azure Blob Storage (más adelante) |
 | Correo | Microsoft Graph desde un buzón compartido (más adelante) |
 | Hosting | Azure App Service Linux **`rrhh-mexico`** (grupo de recursos `rrhh-mexico_group`), Node 24 LTS, plan Básico **B1**, región **West US 3** |
@@ -94,7 +94,22 @@ npm test              # pruebas de la API
 npm start             # node api/dist/server.js
 # Pruebas de la API
 cd api; npm test
+
+# Base de datos local (lee la conexión de api/.env)
+cd api; npm run db:migrate   # aplica los scripts pendientes de db/migrations
+cd api; npm run db:seed      # carga datos de prueba ficticios (solo con DEV_AUTH=true)
+# Comprobación: http://localhost:5173/api/health/db
 ```
+
+### Base de datos
+
+- **Migraciones:** scripts numerados en `db/migrations/` (`001_base.sql`, ...). `api/src/db/migrate.ts` aplica los pendientes en orden, cada uno en una transacción, y los anota en la tabla `schema_migrations`. Un script ya aplicado **no se edita**: los cambios van en un script nuevo. No usar `GO`.
+- **Tablas actuales:** `departments`, `employees` (con `supervisor_id`), `projects` (analíticas) y `holidays`. Sin datos sensibles todavía.
+- **Datos de prueba:** `api/src/db/seed.ts` crea un empleado por cada usuario de prueba de `devUsers.ts`. No se ejecuta sin `DEV_AUTH=true`.
+- **Enlace usuario ↔ empleado:** por **correo** (provisional, ver duda 9). La columna `entra_object_id` queda reservada.
+- **Sin base de datos configurada** (`DB_SERVER` vacío, como hoy en Azure) la API arranca igual y nadie es Supervisor.
+- **Pruebas:** las de base de datos corren contra la base local y se omiten donde no hay `DB_SERVER` (GitHub Actions).
+- **Instalación local:** SQL Server viene con TCP/IP desactivado y solo autenticación de Windows; hay que activar TCP/IP (puerto 1433) y el modo mixto, y crear la base y el usuario de la aplicación. La contraseña vive solo en `api/.env`.
 
 ## Autenticación y autorización
 
@@ -109,7 +124,8 @@ cd api; npm test
 - **API** (`api/src/auth/`): `principal.ts` decodifica la cabecera; `roles.ts` calcula los roles; `middleware.ts` tiene `authenticate` (401), `requireRole` (403) y `getAuth(res)` para leer el usuario en una ruta. Todo `/api` exige usuario salvo `/api/health`. `GET /api/me` devuelve usuario y roles.
 - **Local:** `DEV_AUTH=true` en `api/.env` activa `devAuth`, que fabrica la cabecera real a partir del usuario de prueba elegido (cabecera `X-Dev-User`). Usuarios ficticios en `api/src/auth/devUsers.ts`. La API **no arranca** con `DEV_AUTH=true` si detecta producción o Azure (`WEBSITE_SITE_NAME`).
 - **Front** (`web/src/auth/`): `AuthProvider` carga `/api/me` antes de mostrar la app; `useAuth()` da el usuario. El selector `web/src/dev/DevUserSwitcher.tsx` solo se carga con `import.meta.env.DEV`.
-- **Pendiente:** el rol Supervisor "por datos" es provisional (en local sale de `devUsers.ts`; en producción nadie lo es) hasta que exista la tabla de empleados. En producción todos son solo Colaborador hasta que se creen los grupos de Entra ID, el registro de aplicación emita el claim `groups` y se definan las variables `ENTRA_GROUP_*` en el App Service. El menú de módulos aún no se filtra por rol.
+- **Supervisor "por datos":** sale de la tabla `employees` (`api/src/db/employees.ts`): lo es quien tiene empleados activos con su `supervisor_id`. En producción nadie lo es hasta que exista la base de datos en Azure.
+- **Pendiente:** en producción todos son solo Colaborador hasta que se creen los grupos de Entra ID, el registro de aplicación emita el claim `groups` y se definan las variables `ENTRA_GROUP_*` en el App Service. El menú de módulos aún no se filtra por rol.
 
 ### Roles
 
@@ -144,13 +160,68 @@ Los módulos 01, 02, 03, 08 y 10 comparten el patrón "solicitud → uno o vario
 - Historial completo: quién, cuándo, qué decisión y **motivo** (obligatorio al rechazar).
 - Punto de enganche para notificaciones (el envío de correo real llegará después).
 
-## Módulo 01 — Parte de Horas (Fase 1)
+### Cómo está implementado (`api/src/approvals/`)
+
+- `stateMachine.ts`: reglas como **funciones puras** (aprobar, rechazar con motivo, reenviar, cancelar, a quién le toca decidir).
+- `chains.ts`: cadena por tipo de solicitud. Registrados: `timesheet_week` (supervisor; admite reenvío) y `hiring_request` (RRHH → Dirección; rechazo definitivo). Cada módulo registra el suyo al construirse. El tipo `demo` solo existe en local.
+- Un paso puede tener **varios aprobadores en paralelo** (todos deben aprobar): lo necesita Bajas (Controlling y Almacén).
+- `service.ts`: guarda estado e historial en una transacción, con la fila bloqueada. Tablas `approval_requests` y `approval_actions` (`db/migrations/002_approvals.sql`). La solicitud guarda una copia de su cadena.
+- `routes.ts`: `/api/approvals` → `pending`, `mine`, `:id`, `:id/approve`, `:id/reject`, `:id/resubmit`, `:id/cancel`. Solo se monta si hay base de datos.
+- `notifications.ts`: punto de enganche; hoy solo escribe en el registro, sin datos personales.
+- **Regla asumida, a confirmar:** nadie decide sobre su propia solicitud aunque tenga el rol aprobador.
+- Página de prueba solo en local: `/dev/aprobaciones`.
+
+## Módulo 01 — Parte de Horas (Fase 1, en curso)
+
+Es el módulo que se presentará como terminado. Debe quedar **igual que la app desplegada pero adaptado** a esta arquitectura.
 
 ### Referencia existente
 
-En `../parte-horas` hay un **prototipo web** del módulo (React + Vite + Tailwind + Supabase, con `db.sql`). Se puede **reutilizar** la interfaz y la lógica, pero:
-- **No** usar Supabase: los datos van por nuestra API y Azure SQL.
-- **No** copiar `.env.local` ni ninguna clave.
+- **`../portal-recursos-humanos`: la app de parte de horas ya desplegada** (React + Vite + Supabase, PWA con fichaje sin conexión). Es la referencia de comportamiento e interfaz: fichaje, «Mi semana», panel de supervisión con rechazo por días, panel de RRHH con CSV, orden de trabajo adjunta y avisos push. Tiene manuales en `manual/`.
+- `../parte-horas`: prototipo anterior, más simple.
+- **No** usar Supabase: los datos van por nuestra API y Azure SQL. **No** copiar `.env.local` ni ninguna clave.
+
+### Decisiones (2026-11-12)
+
+- **Cálculo de horas:** el del documento funcional, no el de la app desplegada (ver «Reglas de cálculo»).
+- **Tipos de jornada:** solo Activa / Inactiva (la app desplegada tiene cuatro).
+- **Sin conexión, mixto:** con red la hora la pone el servidor; sin red el fichaje se guarda en el teléfono con la hora del dispositivo, se sube al reconectar y queda marcado como «fichado sin conexión».
+- **Datos:** se empieza limpio; la migración de empleados e historial desde Supabase se hará después.
+- **Se conserva de la app desplegada:** rechazo **por días** (el supervisor marca los días con problema; el colaborador corrige solo esos y reenvía), corrección de jornadas por el supervisor con historial, comentario por jornada, orden de trabajo adjunta, avisos push al rechazar, CSV de nómina.
+- **Medianoche:** una jornada abierta sigue siendo la activa hasta las 08:00 del día siguiente y cuenta para el día de la entrada. Si se cerró de madrugada, se sigue mostrando hasta las 08:00 y hasta entonces no se puede fichar la de hoy (igual que la app desplegada).
+- **Zona horaria:** el dispositivo envía su zona (IANA) en cada petición y el servidor calcula con ella el día de la jornada; la hora la pone siempre el servidor y se guarda en UTC. Revergy tiene sedes en zonas distintas (Sonora va una hora por detrás del centro).
+- **Módulos sin base de datos:** `/api/me` devuelve `hasDatabase`; si es `false` (como hoy en producción) todas las tarjetas siguen en «Próximamente».
+- **Fichaje olvidado:** lo corrige el supervisor (o el colaborador si le rechazan el día).
+- **Festivos:** calendario en la tabla `holidays`, mantenido por RRHH desde la app. Ya no los marca el supervisor a mano.
+- **GPS:** no se captura.
+- **Catálogo de analíticas:** lo mantiene **Controlling**. La carga inicial va por migración; falta la pantalla para que Controlling añada, renombre y desactive analíticas.
+- **Cambios por arquitectura:** el supervisor ve solo a su equipo (`supervisor_id`), no por departamento; RRHH solo ve semanas aprobadas.
+
+### Etapas
+
+1. Datos y catálogos — **hecha**: catálogo de 68 analíticas, administración de empleados y festivos para RRHH (`/empleados`, tarjeta 07 visible solo para RRHH; API en `api/src/admin/`).
+   Pendiente de esta etapa: pantalla de mantenimiento de analíticas para Controlling.
+2. Cálculo de horas — **hecha**: `api/src/timesheet/hours.ts` (funciones puras, en minutos completos; `calculateWeek` da el consolidado).
+3. Fichaje con conexión — **hecha**: tabla `time_entries` (migración 005), API en `api/src/timesheet/` (`/api/timesheet/today`, `clock-in`, `clock-out`, `today/comment`) y pantalla `/parte-horas` (`web/src/pages/timesheet/`). La tarjeta 01 está disponible para todos.
+4. Mi semana — **hecha**: `/parte-horas/semana` con selector de semana, estado, totales y una tarjeta por día con su nota; menú inferior «Fichar / Mi Semana» (`TimesheetLayout`). API: `/api/timesheet/weeks`, `/week?date=` y `/entries/:id/comment`. Las horas se muestran como `h:mm`.
+5. Supervisión — **hecha**: consolidado del equipo con filtros, detalle día por día, aprobar, rechazar marcando días, corregir jornadas e historial (`/parte-horas/equipo`; API `/api/timesheet/team/*`; `api/src/timesheet/team.ts`).
+   - **Corrección** (`api/src/timesheet/corrections.ts`, `PUT /team/entries/:id`): horario, analítica, tipo y dieta. Cada corrección guarda el antes y el después en `time_entry_changes` (migración 007). Si cambian las horas, el día queda marcado como «editado». **Corregir un día ya aprobado lo devuelve a pendiente** (confirmado el 2026-11-13). Límites: salida posterior a la entrada y jornada de 24 h como máximo.
+   - Las horas corregidas viajan como instantes completos calculados en el dispositivo; una salida anterior a la entrada se entiende del día siguiente.
+   - **Historial** (`GET /team/week/history`): une las decisiones del motor de aprobaciones con las correcciones, de la más reciente a la más antigua.
+   - El supervisor solo ve y valida a quienes lo tienen como `supervisor_id` (equipo directo). Los demás responden 404.
+   - Cada decisión se registra en el motor de aprobaciones (tipo `timesheet_week`, entidad `empleado:lunes`): comprueba que decide el supervisor y guarda el historial. Cada ronda de revisión es una solicitud; se reutiliza la pendiente o se abre una nueva.
+   - El estado actual de cada día vive en `time_entries` (migración 006: motivo, quién revisó, corrección enviada).
+   - **Regla confirmada (2026-11-13):** no se puede aprobar una semana con una jornada sin salida; hay que corregirla o rechazarla antes.
+   - La decisión del motor y el cambio de estado de los días se guardan en dos pasos; si el segundo fallara, basta repetir la acción.
+6. Corrección y reenvío — **hecha**: en «Mi Semana» el colaborador ve el motivo, corrige **solo** los días rechazados (`PUT /api/timesheet/entries/:id`) y pulsa «Enviar corrección» con una nota opcional (`POST /week/send-correction`). Esos días vuelven a pendiente y el supervisor ve la semana como «Corregida». Aviso de días rechazados en la pantalla de fichar.
+   - No se puede enviar la corrección mientras un día rechazado siga sin salida.
+   - Un día corregido sigue rechazado hasta que se envía; enviado, ya no se puede cambiar.
+   - El motivo original se conserva en el día hasta la siguiente decisión del supervisor.
+   - El reenvío queda en el historial del motor (`resubmitted`, con la nota) y la corrección en `time_entry_changes`.
+7. RRHH: semanas aprobadas y CSV de nómina.
+8. Sin conexión (PWA).
+9. Orden de trabajo (Azure Blob) y avisos push.
+10. Producción: Azure SQL, migraciones en el despliegue, grupos de roles, empleados reales.
 
 ### Datos que registra el colaborador cada día
 
@@ -174,11 +245,13 @@ En `../parte-horas` hay un **prototipo web** del módulo (React + Vite + Tailwin
 
 | Tipo | Regla |
 |---|---|
-| H. Normal | Lunes a viernes, hasta 40 h semanales |
-| H. Extra | Al superar 8 h/día o 40 h/semana (entre semana) |
-| H. Domingo | Todas las horas del domingo cuentan como extra |
-| Festivo | Todas las horas en festivo oficial cuentan como extra |
-| Dietas | Según marca del colaborador, validado por supervisor |
+| H. Normal | Lunes a viernes no festivo, hasta 8 h por día |
+| H. Extra | Lo que pase de 8 h en esos días, más **todas** las horas del sábado |
+| H. Domingo | Todas las horas del domingo |
+| Festivo | Todas las horas de un día del calendario de festivos, caiga en el día que caiga |
+| Dietas | Número de días con dieta marcada, validado por supervisor |
+
+Interpretación confirmada el 2026-11-12: con el tope de 8 h diarias de lunes a viernes nunca se superan las 40 h semanales, así que las dos condiciones del documento no se solapan. Además: **sin redondeo** (tiempo exacto), **no se descuenta comida** (horas = salida − entrada) y la jornada **Inactiva** cuenta igual que la Activa (el tipo se muestra y se exporta).
 
 El colaborador **no** puede reportar horas extra a mano: se calculan.
 Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de la base de datos y de Express.
@@ -203,16 +276,11 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 
 ## Dudas pendientes (no decidir sin confirmar)
 
-1. **Sábado:** el flujo dice que cuenta como extra, pero la tabla de tipos no tiene categoría para el sábado.
-2. **Umbral de extra:** cómo se combinan "más de 8 h/día" y "más de 40 h/semana" cuando coinciden (evitar contar dos veces).
-3. **Festivos:** quién mantiene el calendario (¿RRHH desde la app?).
-4. **Fichaje olvidado:** qué pasa si alguien no ficha la salida (¿cierre automático?, ¿corrige el supervisor?).
-5. **Ubicación:** el detalle semanal muestra "ubicación". ¿Se captura GPS al fichar? (Implicaciones de privacidad.)
-6. **Jornada que cruza medianoche:** ¿a qué día se imputa?
-7. **Fichaje sin conexión:** la Power App guarda fichajes en una cola local y los sincroniza después. Choca con "hora del servidor". ¿Se necesita?
+Las dudas 1 a 7 y la 10 (sábado, umbral de extra, festivos, fichaje olvidado, ubicación, medianoche, sin conexión y redondeo) quedaron resueltas el 2026-11-12; están en la sección del módulo 01. Se conserva la numeración.
+
 8. **Rol SuperAdmin:** existe en la Power App (lista `MatrizRoles`) y no en la tabla de roles de este archivo.
 9. **Identificación del empleado:** ¿se enlaza el usuario de Entra ID con la ficha por correo (como la Power App) o por ID de objeto de Entra?
-10. **Redondeo a medias horas:** el prototipo `parte-horas` redondea las horas del día a .0/.5. ¿Es una regla real?
+11. **Aprobar la propia solicitud:** el motor de aprobaciones lo impide (por ejemplo, alguien de RRHH no puede dar la aprobación de RRHH a su propia solicitud). Es una regla asumida, no está en el documento. ¿Es correcta? Si lo es, ¿quién aprueba en ese caso?
 
 Cuando se resuelva una duda, muévela a la sección correspondiente como regla.
 
@@ -228,6 +296,7 @@ Se manejan datos personales (CURP, RFC, NSS, salario, incapacidades). Aplica la 
 - Hosting en **App Service** (no Static Web App). La SWA anterior se eliminó.
 - Región **West US 3** (confirmada; antes se preveía Mexico Central). La base de datos irá en la misma región que la app.
 - El repositorio de GitHub es **privado**.
-- Base de datos **Azure SQL**, no listas de SharePoint ni Supabase.
+- Base de datos **Azure SQL**, no listas de SharePoint ni Supabase. Se valoró PostgreSQL el 2026-11-12 y se mantuvo SQL Server.
+- En local, SQL Server **instalado en Windows**, no en Docker (Docker Desktop no se instaló).
 - Front con framework (React) por la complejidad: 11 módulos y vistas por rol.
 - Las partes públicas (buzón anónimo, portal de postulantes) irán separadas de la app principal; se decidirá cómo al llegar a esos módulos.
