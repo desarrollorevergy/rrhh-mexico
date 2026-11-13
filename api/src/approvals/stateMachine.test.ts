@@ -148,9 +148,15 @@ describe('a quién le toca decidir', () => {
     expect(slotsFor(approve(state, 1).state, almacen)).toEqual([])
   })
 
-  it('nadie decide sobre su propia solicitud aunque tenga el rol', () => {
+  it('quien tiene el rol aprobador decide también sobre su propia solicitud', () => {
     const state = startApproval([RRHH])
-    expect(slotsFor(state, actor({ isRequester: true, roles: ['colaborador', 'rrhh'] }))).toEqual([])
+    expect(slotsFor(state, actor({ isRequester: true, roles: ['colaborador', 'rrhh'] }))).toEqual([0])
+    expect(slotsFor(state, actor({ isRequester: true, roles: ['colaborador', 'it'] }))).toEqual([])
+  })
+
+  it('nadie decide el paso de supervisor de su propia solicitud', () => {
+    const state = startApproval([SUPERVISOR])
+    expect(slotsFor(state, actor({ isRequester: true, isRequesterSupervisor: true }))).toEqual([])
   })
 
   it('el administrador decide en cualquier paso, pero no sobre su propia solicitud', () => {
@@ -159,6 +165,7 @@ describe('a quién le toca decidir', () => {
     expect(slotsFor(startApproval([RRHH]), admin)).toEqual([0])
     expect(isApproverInChain([SUPERVISOR, RRHH], admin)).toBe(true)
     expect(slotsFor(startApproval([SUPERVISOR]), { ...admin, isRequester: true })).toEqual([])
+    expect(slotsFor(startApproval([RRHH]), { ...admin, isRequester: true })).toEqual([])
   })
 
   it('isApproverInChain reconoce a los aprobadores de cualquier paso', () => {

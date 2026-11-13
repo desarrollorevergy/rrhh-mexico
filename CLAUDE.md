@@ -53,61 +53,16 @@ El módulo «Incremento Salarial / Puesto» del documento funcional **se retiró
 | Procesos programados | Azure Functions con temporizador (más adelante: consolidado semanal, envío de nóminas) |
 | Pruebas | Vitest para lógica de negocio (sobre todo cálculo de horas) |
 
-### Cómo se despliega (futuro)
+### Despliegue
 
-Una sola aplicación: Express sirve el front compilado (`web/dist`) y la API bajo `/api`. App Service le pasa el puerto en `process.env.PORT`. El despliegue será con GitHub Actions desde `main` (organización GitHub `desarrollorevergy`).
-
-- El **build se hace en GitHub Actions** y se sube ya compilado; App Service no compila (`SCM_DO_BUILD_DURING_DEPLOYMENT=false`) y arranca con `npm start` desde la raíz del paquete.
-- El paquete desplegado lleva solo: `package.json` raíz, `api/package.json`, `api/dist`, `api/node_modules` (sin devDependencies) y `web/dist`.
-- Orden de rutas en `api/src/app.ts`: rutas `/api` → 404 JSON para cualquier `/api/*` inexistente → archivos de `web/dist` → `index.html` para el resto (lo resuelve el router del front). Con Express 5 el comodín se escribe `/{*splat}`, no `*`.
-- El `build` de la raíz instala `web/` y `api/` antes de compilar, porque el workflow que genera el Centro de implementación de Azure solo ejecuta `npm install`, `npm run build` y `npm run test` en la raíz.
-- Workflow: `.github/workflows/main_rrhh-mexico.yml`, generado por el Centro de implementación de Azure. Se ejecuta en cada push a `main` y despliega en producción. Se autentica con un **perfil de publicación** guardado como secreto en GitHub (autenticación básica).
-- **Primer despliegue hecho el 2026-11-12** (carcasa visual, sin inicio de sesión ni base de datos).
-- Pendiente: recortar el paquete (hoy sube el repo entero con devDependencies, fuentes y `docs/`) y valorar pasar a identidad administrada en lugar del perfil de publicación.
-
-### Estructura del repo
-
-```
-rrhh-mexico/
-├── CLAUDE.md
-├── .gitignore
-├── package.json  # scripts de la raíz: install:all, build, start
-├── web/          # React + Vite + TS
-├── api/          # Express + TS
-│   └── src/server.ts
-├── db/           # scripts SQL (migraciones numeradas: 001_..., 002_...)
-└── docs/         # documento funcional y decisiones
-```
-
-### Comandos
-
-```powershell
-# API (puerto 3000)
-cd api; npm run dev
-# Front (puerto 5173, con proxy /api -> localhost:3000)
-cd web; npm run dev
-# Comprobación
-# http://localhost:5173/api/health
-
-# Como en producción (desde la raíz): un solo servidor en el puerto 3000
-npm run build         # instala web/ y api/ (install:all) y compila web/dist y api/dist
-npm test              # pruebas de la API
-npm start             # node api/dist/server.js
-# Pruebas de la API
-cd api; npm test
-
-# Base de datos local (lee la conexión de api/.env)
-cd api; npm run db:migrate   # aplica los scripts pendientes de db/migrations
-cd api; npm run db:seed      # carga datos de prueba ficticios (solo con DEV_AUTH=true)
-# Comprobación: http://localhost:5173/api/health/db
-```
+GitHub Actions despliega en producción en cada push a `main`. El detalle (paquete, orden de rutas, workflow y pendientes) está en la skill `despliegue` (`.claude/skills/despliegue/SKILL.md`).
 
 ### Base de datos
 
 - **Migraciones:** scripts numerados en `db/migrations/` (`001_base.sql`, ...). `api/src/db/migrate.ts` aplica los pendientes en orden, cada uno en una transacción, y los anota en la tabla `schema_migrations`. Un script ya aplicado **no se edita**: los cambios van en un script nuevo. No usar `GO`.
 - **Tablas actuales:** `departments`, `employees` (con `supervisor_id`), `projects` (analíticas) y `holidays`. Sin datos sensibles todavía.
 - **Datos de prueba:** `api/src/db/seed.ts` crea un empleado por cada usuario de prueba de `devUsers.ts`. No se ejecuta sin `DEV_AUTH=true`.
-- **Enlace usuario ↔ empleado:** por **correo** (provisional, ver duda 9). La columna `entra_object_id` queda reservada.
+- **Enlace usuario ↔ empleado:** por **correo** (confirmado el 2026-11-13). La columna `entra_object_id` queda reservada, sin uso.
 - **Sin base de datos configurada** (`DB_SERVER` vacío, como hoy en Azure) la API arranca igual y nadie es Supervisor.
 - **Pruebas:** las de base de datos corren contra la base local y se omiten donde no hay `DB_SERVER` (GitHub Actions).
 - **Instalación local:** SQL Server viene con TCP/IP desactivado y solo autenticación de Windows; hay que activar TCP/IP (puerto 1433) y el modo mixto, y crear la base y el usuario de la aplicación. La contraseña vive solo en `api/.env`.
@@ -149,6 +104,8 @@ Los nombres de grupos e IDs se configuran por variables de entorno, nunca en el 
 
 Entra a todos los módulos y **actúa**: hace lo mismo que RRHH y que el supervisor de cualquier empleado. Todo queda en el historial con su nombre.
 
+**Es un rol para mostrar el software, no parte del flujo real** (aclarado por el usuario el 2026-11-13): cuando la app esté en uso, el administrador no participará en ningún flujo de aprobación. No diseñar reglas de negocio que dependan de él ni ampliar lo que puede hacer.
+
 - **Límites:** no decide sobre sus propias solicitudes (su parte de horas lo valida su supervisor) y, como administrador, **no** tendrá acceso al Buzón de Quejas. Sí podrá verlo con el selector «Ver como» en los roles RRHH o Comité de Ética (confirmado el 2026-11-13).
 - **Necesita ficha de empleado** para fichar y para validar partes de horas (las decisiones se guardan a nombre de un empleado). Sin ficha sí puede entrar a «Ficha de Empleado» y darse de alta.
 - **Implementación:** `isAdmin` en `api/src/auth/roles.ts`. `requireRole` lo deja pasar siempre; en supervisión alcanza a todos menos a sí mismo (`scopeSql` en `api/src/timesheet/team.ts`); en el motor de aprobaciones encaja con cualquier aprobador (`matches` en `stateMachine.ts`). En el front, `hasRole` (`web/src/auth/authContext.ts`). Usuario de prueba: `dev-admin`.
@@ -173,17 +130,11 @@ Los módulos 01, 02, 03 y 08 comparten el patrón "solicitud → uno o varios ap
 - Cadena de aprobadores por tipo de solicitud (ej. supervisor → RRHH; RRHH → Dirección).
 - Historial completo: quién, cuándo, qué decisión y **motivo** (obligatorio al rechazar).
 - Punto de enganche para notificaciones (el envío de correo real llegará después).
+- **Solicitud propia (confirmado el 2026-11-13):** quien tiene el rol aprobador de un paso (RRHH, Dirección, Controlling, Almacén) puede aprobar o rechazar también su propia solicitud. El paso de supervisor nunca lo decide uno mismo: el parte de horas propio lo valida su supervisor.
 
-### Cómo está implementado (`api/src/approvals/`)
+### Cómo está implementado
 
-- `stateMachine.ts`: reglas como **funciones puras** (aprobar, rechazar con motivo, reenviar, cancelar, a quién le toca decidir).
-- `chains.ts`: cadena por tipo de solicitud. Registrados: `timesheet_week` (supervisor; admite reenvío) y `hiring_request` (RRHH → Dirección; rechazo definitivo). Cada módulo registra el suyo al construirse. El tipo `demo` solo existe en local.
-- Un paso puede tener **varios aprobadores en paralelo** (todos deben aprobar): lo necesita Bajas (Controlling y Almacén).
-- `service.ts`: guarda estado e historial en una transacción, con la fila bloqueada. Tablas `approval_requests` y `approval_actions` (`db/migrations/002_approvals.sql`). La solicitud guarda una copia de su cadena.
-- `routes.ts`: `/api/approvals` → `pending`, `mine`, `:id`, `:id/approve`, `:id/reject`, `:id/resubmit`, `:id/cancel`. Solo se monta si hay base de datos.
-- `notifications.ts`: punto de enganche; hoy solo escribe en el registro, sin datos personales.
-- **Regla asumida, a confirmar:** nadie decide sobre su propia solicitud aunque tenga el rol aprobador.
-- Página de prueba solo en local: `/dev/aprobaciones`.
+En `api/src/approvals/`; el detalle está en `api/src/approvals/CLAUDE.md`, que se carga al trabajar en esa carpeta.
 
 ## Módulo 01 — Parte de Horas (Fase 1, en curso)
 
@@ -216,48 +167,20 @@ Es el módulo que se presentará como terminado. Debe quedar **igual que la app 
 1. Datos y catálogos — **hecha**: catálogo de 68 analíticas, administración de empleados y festivos para RRHH (`/empleados`, tarjeta 07 visible solo para RRHH; API en `api/src/admin/`).
    Pendiente de esta etapa: pantalla de mantenimiento de analíticas para Controlling.
 2. Cálculo de horas — **hecha**: `api/src/timesheet/hours.ts` (funciones puras, en minutos completos; `calculateWeek` da el consolidado).
-3. Fichaje con conexión — **hecha**: tabla `time_entries` (migración 005), API en `api/src/timesheet/` (`/api/timesheet/today`, `clock-in`, `clock-out`, `today/comment`) y pantalla `/parte-horas` (`web/src/pages/timesheet/`). La tarjeta 01 está disponible para todos.
-4. Mi semana — **hecha**: `/parte-horas/semana` con selector de semana, estado, totales y una tarjeta por día con su nota; menú inferior «Fichar / Mi Semana» (`TimesheetLayout`). API: `/api/timesheet/weeks`, `/week?date=` y `/entries/:id/comment`. Las horas se muestran como `h:mm`.
-5. Supervisión — **hecha**: consolidado del equipo con filtros, detalle día por día, aprobar, rechazar marcando días, corregir jornadas e historial (`/parte-horas/equipo`; API `/api/timesheet/team/*`; `api/src/timesheet/team.ts`).
-   - **Corrección** (`api/src/timesheet/corrections.ts`, `PUT /team/entries/:id`): horario, analítica, tipo y dieta. Cada corrección guarda el antes y el después en `time_entry_changes` (migración 007). Si cambian las horas, el día queda marcado como «editado». **Corregir un día ya aprobado lo devuelve a pendiente** (confirmado el 2026-11-13). Límites: salida posterior a la entrada y jornada de 24 h como máximo.
-   - Las horas corregidas viajan como instantes completos calculados en el dispositivo; una salida anterior a la entrada se entiende del día siguiente.
-   - **Historial** (`GET /team/week/history`): une las decisiones del motor de aprobaciones con las correcciones, de la más reciente a la más antigua.
-   - El supervisor solo ve y valida a quienes lo tienen como `supervisor_id` (equipo directo). Los demás responden 404.
-   - Cada decisión se registra en el motor de aprobaciones (tipo `timesheet_week`, entidad `empleado:lunes`): comprueba que decide el supervisor y guarda el historial. Cada ronda de revisión es una solicitud; se reutiliza la pendiente o se abre una nueva.
-   - El estado actual de cada día vive en `time_entries` (migración 006: motivo, quién revisó, corrección enviada).
-   - **Regla confirmada (2026-11-13):** no se puede aprobar una semana con una jornada sin salida; hay que corregirla o rechazarla antes.
-   - La decisión del motor y el cambio de estado de los días se guardan en dos pasos; si el segundo fallara, basta repetir la acción.
-6. Corrección y reenvío — **hecha**: en «Mi Semana» el colaborador ve el motivo, corrige **solo** los días rechazados (`PUT /api/timesheet/entries/:id`) y pulsa «Enviar corrección» con una nota opcional (`POST /week/send-correction`). Esos días vuelven a pendiente y el supervisor ve la semana como «Corregida». Aviso de días rechazados en la pantalla de fichar.
-   - No se puede enviar la corrección mientras un día rechazado siga sin salida.
-   - Un día corregido sigue rechazado hasta que se envía; enviado, ya no se puede cambiar.
-   - El motivo original se conserva en el día hasta la siguiente decisión del supervisor.
-   - El reenvío queda en el historial del motor (`resubmitted`, con la nota) y la corrección en `time_entry_changes`.
-7. RRHH: semanas aprobadas y CSV de nómina — **hecha**: `/parte-horas/nomina` (pestaña «Nómina», solo RRHH y administrador) con filtros por período, departamento y búsqueda, detalle día por día y «Exportar CSV». API `/api/timesheet/payroll/*` (`summary`, `week`, `export`); `api/src/timesheet/payroll.ts`.
-   - **Solo lectura y solo semanas aprobadas** (todas sus jornadas aprobadas). RRHH no aprueba, rechaza ni corrige. Una semana no aprobada responde 404.
-   - El panel **no exige ficha de empleado** ni la crea: se monta antes que el resto de `/api/timesheet`.
-   - **CSV:** una línea por colaborador y semana, con exactamente las semanas a la vista tras filtrar. Columnas: `Periodo, No_Empleado, Empleado, Correo, Departamento, Analiticas, H_Normales, H_Extras, H_Domingo, H_Festivo, Dietas, Dias_Inactiva, Total_Horas`. Horas en decimal con dos cifras y punto (8 h 30 min → `8.50`); separador coma, BOM y CRLF para Excel; los textos que empiezan por `=`, `+`, `-` o `@` llevan apóstrofo para que Excel no los ejecute. **El formato no está validado con quien hace la nómina.**
-   - El detalle reutiliza la pantalla del supervisor en modo `readOnly` (sin historial).
-   - Pendiente: el resumen carga todas las jornadas y agrupa en memoria; habrá que acotarlo por fechas cuando crezca el histórico.
+3. Fichaje con conexión — **hecha**.
+4. Mi semana — **hecha**.
+5. Supervisión — **hecha**.
+6. Corrección y reenvío — **hecha**.
+7. RRHH: semanas aprobadas y CSV de nómina — **hecha**. **El formato del CSV no está validado con quien hace la nómina.**
 8. Sin conexión (PWA).
 9. Orden de trabajo (Azure Blob) y avisos push.
 10. Producción: Azure SQL, migraciones en el despliegue, grupos de roles, empleados reales.
 
+El detalle de las etapas 3 a 7 (rutas, tablas y reglas confirmadas) está en `api/src/timesheet/CLAUDE.md`, que se carga al trabajar en esa carpeta. **Léelo antes de cambiar pantallas del Parte de Horas en `web/`.**
+
 ### Importar datos de la app anterior
 
-`api/src/db/importLegacy.ts` lleva a la base de datos los empleados y registros exportados de Supabase: `data/users_rows.csv` y `data/registros_tiempos_rows.csv`. **`data/` tiene datos personales reales (RFC, correos personales) y está en `.gitignore`: nunca se sube.**
-
-```powershell
-cd api; npm run db:import-legacy              # simulación contra la base local: no guarda nada
-cd api; npm run db:import-legacy -- --apply   # guarda
-# Contra producción: conexión en api/.env.produccion (ignorado por git)
-cd api; npx tsx --env-file=.env.produccion src/db/importLegacy.ts [--apply]
-```
-
-- Por defecto **simula**: hace todo en una transacción y la deshace. El informe solo lleva recuentos.
-- Se puede repetir: no duplica empleados (por correo) ni jornadas (por persona y día). Sirve para traer lo que se siga fichando en la app anterior hasta apagarla.
-- **Reglas confirmadas el 2026-11-13:** solo usuarios con correo de empresa; sin RFC ni correo personal; número provisional `MIG-<id>`; sin supervisor (lo asigna RRHH); todo tipo de jornada antiguo pasa a Activa; las analíticas que falten se añaden sin nombre; fuera los registros de cuentas que no están en usuarios. Los registros dudosos (muy cortos, muy largos, sin salida) entran como están para que el supervisor los revise.
-- No se importan las órdenes de trabajo adjuntas (etapa 9) ni el historial de aprobaciones: el estado y el motivo de rechazo van en la propia jornada.
-- Con el archivo del 2026-11-13: 48 empleados, 7 departamentos y 311 jornadas (12 fuera, de 2 cuentas desconocidas).
+**`data/` tiene datos personales reales (RFC, correos personales) y está en `.gitignore`: nunca se sube.** El importador (`api/src/db/importLegacy.ts`), sus comandos y sus reglas están en la skill `importar-app-anterior` (`.claude/skills/importar-app-anterior/SKILL.md`).
 
 ### Datos que registra el colaborador cada día
 
@@ -312,10 +235,7 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 
 ## Dudas pendientes (no decidir sin confirmar)
 
-Las dudas 1 a 7 y la 10 (sábado, umbral de extra, festivos, fichaje olvidado, ubicación, medianoche, sin conexión y redondeo) quedaron resueltas el 2026-11-12; están en la sección del módulo 01. La 8 (rol SuperAdmin) se resolvió el 2026-11-13 con el rol Administrador. Se conserva la numeración.
-
-9. **Identificación del empleado:** ¿se enlaza el usuario de Entra ID con la ficha por correo (como la Power App) o por ID de objeto de Entra?
-11. **Aprobar la propia solicitud:** el motor de aprobaciones lo impide (por ejemplo, alguien de RRHH no puede dar la aprobación de RRHH a su propia solicitud). Es una regla asumida, no está en el documento. ¿Es correcta? Si lo es, ¿quién aprueba en ese caso?
+Las dudas 1 a 7 y la 10 (sábado, umbral de extra, festivos, fichaje olvidado, ubicación, medianoche, sin conexión y redondeo) quedaron resueltas el 2026-11-12; están en la sección del módulo 01. La 8 (rol SuperAdmin) se resolvió el 2026-11-13 con el rol Administrador. La 9 (identificación del empleado) se resolvió el 2026-11-13: enlace por correo. La 11 (aprobar la propia solicitud) también: sí se puede con el rol aprobador (ver «Motor de aprobaciones»). Se conserva la numeración. No quedan dudas abiertas.
 
 Cuando se resuelva una duda, muévela a la sección correspondiente como regla.
 

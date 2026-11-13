@@ -89,15 +89,21 @@ function matches(spec: ApprovalStep['approvers'][number], actor: ActorRelation):
 }
 
 /**
- * Decisiones pendientes que le corresponden a esta persona en el paso actual.
- * Nadie decide sobre su propia solicitud, aunque tenga el rol aprobador o sea administrador.
+ * Sobre su propia solicitud solo decide quien tiene de verdad el rol aprobador del paso
+ * (por ejemplo, alguien de RRHH aprueba el paso de RRHH de sus propias vacaciones).
+ * No vale el paso de supervisor ni el comodín de administrador: su parte de horas lo valida su supervisor.
  */
+function matchesOwnRequest(spec: ApprovalStep['approvers'][number], actor: ActorRelation): boolean {
+  return spec.kind === 'role' && actor.roles.includes(spec.role)
+}
+
+/** Decisiones pendientes que le corresponden a esta persona en el paso actual. */
 export function slotsFor(state: ApprovalState, actor: ActorRelation): number[] {
-  if (actor.isRequester) return []
   const step = state.steps[state.currentStep]
   if (!step) return []
   return pendingSlots(state).filter((slot) => {
     const spec = step.approvers[slot]
-    return spec !== undefined && matches(spec, actor)
+    if (spec === undefined) return false
+    return actor.isRequester ? matchesOwnRequest(spec, actor) : matches(spec, actor)
   })
 }
