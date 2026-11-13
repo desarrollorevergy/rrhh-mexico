@@ -16,5 +16,10 @@ export interface AuthUser {
 /** Lo que el resto de la API usa: el usuario y sus roles ya resueltos. */
 export interface AuthContext {
   user: AuthUser
+  /** Roles con los que actúa en esta petición. */
   roles: Role[]
+  /** Es administrador de verdad, aunque esté viendo la app como otro rol. */
+  isAdmin: boolean
+  /** Rol elegido por el administrador en el selector «Ver como», si hay alguno. */
+  viewAs: Role | null
 }

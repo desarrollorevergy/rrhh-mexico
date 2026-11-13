@@ -1,3 +1,4 @@
+import { isAdmin } from '../auth/roles.js'
 import type { Role } from '../auth/types.js'
 import { ApprovalError, type ApprovalState, type ApprovalStep } from './types.js'
 
@@ -81,13 +82,15 @@ export function isApproverInChain(steps: ApprovalStep[], actor: ActorRelation): 
   return steps.some((step) => step.approvers.some((spec) => matches(spec, actor)))
 }
 
+/** El administrador puede decidir en cualquier paso, como si fuera el supervisor o tuviera el rol. */
 function matches(spec: ApprovalStep['approvers'][number], actor: ActorRelation): boolean {
+  if (isAdmin(actor.roles)) return true
   return spec.kind === 'supervisor' ? actor.isRequesterSupervisor : actor.roles.includes(spec.role)
 }
 
 /**
  * Decisiones pendientes que le corresponden a esta persona en el paso actual.
- * Nadie decide sobre su propia solicitud, aunque tenga el rol aprobador.
+ * Nadie decide sobre su propia solicitud, aunque tenga el rol aprobador o sea administrador.
  */
 export function slotsFor(state: ApprovalState, actor: ActorRelation): number[] {
   if (actor.isRequester) return []

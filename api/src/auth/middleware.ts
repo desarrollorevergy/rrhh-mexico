@@ -2,11 +2,14 @@ import type { RequestHandler, Response } from 'express'
 import type { AppConfig } from '../config/env.js'
 import { DEFAULT_DEV_USER_ID, DEV_USERS } from './devUsers.js'
 import { encodePrincipal, parsePrincipal, PRINCIPAL_HEADER } from './principal.js'
-import { resolveRoles } from './roles.js'
+import { isAdmin, resolveRoles, viewAs } from './roles.js'
 import type { AuthContext, AuthUser, Role } from './types.js'
 
 /** Cabecera con la que el selector de desarrollo elige el usuario de prueba. */
 export const DEV_USER_HEADER = 'x-dev-user'
+
+/** Cabecera con el rol elegido por el administrador en el selector «Ver como». */
+export const VIEW_AS_HEADER = 'x-view-as-role'
 
 export type SupervisorLookup = (user: AuthUser) => Promise<boolean>
 
@@ -47,10 +50,9 @@ export function authenticate(config: AppConfig, isSupervisor: SupervisorLookup):
       return
     }
 
-    const auth: AuthContext = {
-      user,
-      roles: resolveRoles(user, config.groupIds, await isSupervisor(user)),
-    }
+    const realRoles = resolveRoles(user, config.groupIds, await isSupervisor(user))
+    // «Ver como»: solo tiene efecto si quien lo pide es administrador de verdad.
+    const auth: AuthContext = { user, isAdmin: isAdmin(realRoles), ...viewAs(realRoles, req.get(VIEW_AS_HEADER)) }
     res.locals.auth = auth
     next()
   }
@@ -63,11 +65,14 @@ export function getAuth(res: Response): AuthContext {
   return auth
 }
 
-/** Exige que el usuario tenga al menos uno de los roles indicados. */
+/**
+ * Exige que el usuario tenga al menos uno de los roles indicados. El administrador pasa siempre.
+ * El Buzón de Quejas, cuando se construya, no debe usar esta función: el administrador queda fuera.
+ */
 export function requireRole(...allowed: Role[]): RequestHandler {
   return (_req, res, next) => {
     const { roles } = getAuth(res)
-    if (!roles.some((role) => allowed.includes(role))) {
+    if (!isAdmin(roles) && !roles.some((role) => allowed.includes(role))) {
       res.status(403).json({ error: 'No tienes permiso para esta acción' })
       return
     }

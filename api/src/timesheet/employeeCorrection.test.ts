@@ -141,9 +141,9 @@ describe.skipIf(!db)('Corrección y reenvío del colaborador', () => {
     expect(tuesday.rejectReason).toBe('Falta la salida del martes')
     expect((await service.weeks(ids.worker, MX)).rejectedWeeks).toEqual([])
 
-    const summary = (await team.summary(ids.boss)).find((row) => row.employeeId === ids.worker)
+    const summary = (await team.summary(boss())).find((row) => row.employeeId === ids.worker)
     expect(summary).toMatchObject({ status: 'pending', corrected: true })
-    expect(await team.detail(ids.boss, ids.worker, WEEK)).toMatchObject({
+    expect(await team.detail(boss(), ids.worker, WEEK)).toMatchObject({
       corrected: true,
       correctionNote: 'Ya puse la salida del martes',
     })
@@ -158,7 +158,7 @@ describe.skipIf(!db)('Corrección y reenvío del colaborador', () => {
   it('todo queda en el historial y el supervisor aprueba', async () => {
     expect((await approvals.findLatest('timesheet_week', `${ids.worker}:${WEEK}`))?.status).toBe('pending')
 
-    const history = await team.history(ids.boss, ids.worker, WEEK)
+    const history = await team.history(boss(), ids.worker, WEEK)
     expect(history.map((item) => item.kind)).toEqual(
       expect.arrayContaining(['rejected', 'corrected_employee', 'resubmitted']),
     )

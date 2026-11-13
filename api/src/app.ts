@@ -62,9 +62,18 @@ export function createApp(options: AppOptions = {}): Express {
   app.use('/api', authenticate(config, isSupervisor))
 
   app.get('/api/me', (_req, res) => {
-    const { user, roles } = getAuth(res)
-    // hasDatabase: sin base de datos configurada los módulos aún no están disponibles.
-    res.json({ id: user.id, name: user.name, email: user.email, roles, hasDatabase: Boolean(config.db) })
+    const { user, roles, isAdmin, viewAs } = getAuth(res)
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      roles,
+      // Administrador de verdad: el front le muestra el selector «Ver como».
+      isAdmin,
+      viewAs,
+      // hasDatabase: sin base de datos configurada los módulos aún no están disponibles.
+      hasDatabase: Boolean(config.db),
+    })
   })
 
   // ¿Responde la base de datos? No da detalles del error.

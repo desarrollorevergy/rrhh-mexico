@@ -92,10 +92,11 @@ export function timesheetRouter(db: DbConfig, service: TimesheetService, team: T
     }),
   )
 
-  // Supervisión: solo quien tiene gente a su cargo, y solo sobre su equipo directo.
+  // Supervisión: quien tiene gente a su cargo, solo sobre su equipo directo. El administrador
+  // pasa siempre (requireRole) y alcanza a todos los empleados (team.ts).
   const supervisor = requireRole('supervisor')
 
-  router.get('/team/summary', supervisor, handle((actor) => team.summary(actor.employeeId)))
+  router.get('/team/summary', supervisor, handle((actor) => team.summary(actor)))
 
   router.get(
     '/team/week',
@@ -106,7 +107,7 @@ export function timesheetRouter(db: DbConfig, service: TimesheetService, team: T
       if (!Number.isInteger(employeeId) || typeof date !== 'string' || !isValidDate(date)) {
         throw new TimesheetError(400, 'Semana no válida')
       }
-      return team.detail(actor.employeeId, employeeId, date)
+      return team.detail(actor, employeeId, date)
     }),
   )
 
@@ -119,7 +120,7 @@ export function timesheetRouter(db: DbConfig, service: TimesheetService, team: T
       if (!Number.isInteger(employeeId) || typeof date !== 'string' || !isValidDate(date)) {
         throw new TimesheetError(400, 'Semana no válida')
       }
-      return team.history(actor.employeeId, employeeId, date)
+      return team.history(actor, employeeId, date)
     }),
   )
 

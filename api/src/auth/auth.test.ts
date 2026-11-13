@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
 import { loadConfig, type AppConfig } from '../config/env.js'
-import { DEV_USER_HEADER } from './middleware.js'
+import { DEV_USER_HEADER, requireRole, VIEW_AS_HEADER } from './middleware.js'
 import { encodePrincipal, parsePrincipal, PRINCIPAL_HEADER } from './principal.js'
-import { resolveRoles } from './roles.js'
-import type { AuthUser } from './types.js'
+import { resolveRoles, viewAs } from './roles.js'
+import type { AuthUser, Role } from './types.js'
 
 const USER: AuthUser = {
   id: '11111111-aaaa-bbbb-cccc-222222222222',
@@ -64,6 +64,54 @@ describe('resolveRoles', () => {
   })
 })
 
+describe('viewAs (selector «Ver como» del administrador)', () => {
+  const admin: Role[] = ['colaborador', 'supervisor', 'admin', 'rrhh']
+
+  it('el administrador pasa a tener solo el rol elegido', () => {
+    expect(viewAs(admin, 'controlling')).toEqual({ roles: ['colaborador', 'controlling'], viewAs: 'controlling' })
+    expect(viewAs(admin, 'supervisor')).toEqual({ roles: ['colaborador', 'supervisor'], viewAs: 'supervisor' })
+    expect(viewAs(admin, 'colaborador')).toEqual({ roles: ['colaborador'], viewAs: 'colaborador' })
+  })
+
+  it('sin elegir, o con un rol que no existe, sigue como administrador', () => {
+    expect(viewAs(admin, undefined)).toEqual({ roles: admin, viewAs: null })
+    expect(viewAs(admin, 'admin')).toEqual({ roles: admin, viewAs: null })
+    expect(viewAs(admin, 'jefe-supremo')).toEqual({ roles: admin, viewAs: null })
+  })
+
+  it('quien no es administrador no gana ni cambia roles', () => {
+    expect(viewAs(['colaborador'], 'rrhh')).toEqual({ roles: ['colaborador'], viewAs: null })
+    expect(viewAs(['colaborador', 'rrhh'], 'direccion')).toEqual({ roles: ['colaborador', 'rrhh'], viewAs: null })
+  })
+})
+
+describe('requireRole', () => {
+  /** Devuelve 'pasa' o el código de estado con el que se rechazó. */
+  const check = (roles: Role[]) => {
+    let outcome: 'pasa' | number = 200
+    const res = {
+      locals: { auth: { user: USER, roles, isAdmin: roles.includes('admin'), viewAs: null } },
+      status: (code: number) => {
+        outcome = code
+        return { json: () => undefined }
+      },
+    }
+    requireRole('rrhh')({} as never, res as never, () => {
+      outcome = 'pasa'
+    })
+    return outcome
+  }
+
+  it('deja pasar a quien tiene el rol y rechaza al resto', () => {
+    expect(check(['colaborador', 'rrhh'])).toBe('pasa')
+    expect(check(['colaborador', 'direccion'])).toBe(403)
+  })
+
+  it('el administrador pasa aunque no tenga el rol pedido', () => {
+    expect(check(['colaborador', 'admin'])).toBe('pasa')
+  })
+})
+
 describe('loadConfig', () => {
   it('por defecto la autenticación simulada está apagada', () => {
     expect(loadConfig({})).toEqual({ devAuth: false, groupIds: {} })
@@ -103,7 +151,7 @@ function start(config: AppConfig) {
 }
 
 describe('GET /api/me como en producción', () => {
-  const { server, baseUrl } = start({ devAuth: false, groupIds: { rrhh: 'grupo-rrhh' } })
+  const { server, baseUrl } = start({ devAuth: false, groupIds: { rrhh: 'grupo-rrhh', admin: 'grupo-admin' } })
   afterAll(() => {
     server.close()
   })
@@ -122,9 +170,25 @@ describe('GET /api/me como en producción', () => {
       name: USER.name,
       email: USER.email,
       roles: ['colaborador', 'rrhh'],
+      isAdmin: false,
+      viewAs: null,
       // Esta app de prueba no tiene base de datos configurada.
       hasDatabase: false,
     })
+  })
+
+  it('el administrador puede ver la app como otro rol; los demás no', async () => {
+    const me = async (groups: string[], role: string) => {
+      const res = await fetch(`${baseUrl}/api/me`, {
+        headers: { [PRINCIPAL_HEADER]: encodePrincipal({ ...USER, groups }), [VIEW_AS_HEADER]: role },
+      })
+      return (await res.json()) as { roles: string[]; isAdmin: boolean; viewAs: string | null }
+    }
+
+    expect(await me(['grupo-admin'], 'rrhh')).toMatchObject({ roles: ['colaborador', 'rrhh'], isAdmin: true, viewAs: 'rrhh' })
+    expect(await me(['grupo-admin'], 'colaborador')).toMatchObject({ roles: ['colaborador'], isAdmin: true })
+    // Quien no es administrador no gana el rol aunque envíe la cabecera
+    expect(await me([], 'rrhh')).toMatchObject({ roles: ['colaborador'], isAdmin: false, viewAs: null })
   })
 
   it('ignora la cabecera del selector de desarrollo', async () => {

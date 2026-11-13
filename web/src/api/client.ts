@@ -20,6 +20,26 @@ export function setDevUser(id: string | null): void {
   }
 }
 
+const VIEW_AS_KEY = 'viewAsRole'
+
+/** Rol elegido por el administrador en el selector «Ver como». La API lo ignora si no lo es. */
+export function getViewAsRole(): string | null {
+  try {
+    return localStorage.getItem(VIEW_AS_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function setViewAsRole(role: string | null): void {
+  try {
+    if (role) localStorage.setItem(VIEW_AS_KEY, role)
+    else localStorage.removeItem(VIEW_AS_KEY)
+  } catch {
+    // Sin almacenamiento: se queda como administrador.
+  }
+}
+
 export class ApiError extends Error {
   status: number
 
@@ -49,6 +69,9 @@ export function apiDelete<T>(path: string): Promise<T> {
 async function apiRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
+
+  const viewAsRole = getViewAsRole()
+  if (viewAsRole) headers['X-View-As-Role'] = viewAsRole
 
   // En producción este bloque no existe: la identidad la pone App Service.
   if (import.meta.env.DEV) {

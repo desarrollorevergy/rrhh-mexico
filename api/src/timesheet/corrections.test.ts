@@ -58,7 +58,7 @@ describe.skipIf(!db)('Corrección de jornadas por el supervisor', () => {
   const approvals = createApprovalService({ db: dbConfig, includeDemo: false, notifier: () => undefined })
   const team = createTeamService({ db: dbConfig, approvals })
   const actor = (employeeId: number): Actor => ({ employeeId, roles: ['colaborador', 'supervisor'] })
-  const day = async (date: string) => (await team.detail(ids.boss, ids.worker, WEEK)).days.find((item) => item.workDate === date)!
+  const day = async (date: string) => (await team.detail(actor(ids.boss), ids.worker, WEEK)).days.find((item) => item.workDate === date)!
 
   beforeAll(async () => {
     const pool = await getPool(dbConfig)
@@ -120,7 +120,7 @@ describe.skipIf(!db)('Corrección de jornadas por el supervisor', () => {
   })
 
   it('corrige la jornada, recalcula la semana y marca las horas como editadas', async () => {
-    const before = await team.detail(ids.boss, ids.worker, WEEK)
+    const before = await team.detail(actor(ids.boss), ids.worker, WEEK)
     expect(before.totals).toMatchObject({ normal: h(8), total: h(8) })
 
     const week = await team.correct(actor(ids.boss), entryIds['2026-10-27']!, {
@@ -137,9 +137,9 @@ describe.skipIf(!db)('Corrección de jornadas por el supervisor', () => {
   })
 
   it('una corrección sin cambios no deja rastro', async () => {
-    const before = await team.history(ids.boss, ids.worker, WEEK)
+    const before = await team.history(actor(ids.boss), ids.worker, WEEK)
     await team.correct(actor(ids.boss), entryIds['2026-10-27']!, { perDiem: true, projectId: otherProjectId })
-    expect(await team.history(ids.boss, ids.worker, WEEK)).toHaveLength(before.length)
+    expect(await team.history(actor(ids.boss), ids.worker, WEEK)).toHaveLength(before.length)
   })
 
   it('solo el supervisor directo puede corregir', async () => {
@@ -150,7 +150,7 @@ describe.skipIf(!db)('Corrección de jornadas por el supervisor', () => {
 
   it('corregir un día aprobado lo devuelve a pendiente', async () => {
     await team.approve(actor(ids.boss), ids.worker, WEEK)
-    expect((await team.detail(ids.boss, ids.worker, WEEK)).status).toBe('approved')
+    expect((await team.detail(actor(ids.boss), ids.worker, WEEK)).status).toBe('approved')
 
     const week = await team.correct(actor(ids.boss), entryIds['2026-10-26']!, { shiftType: 'inactiva' })
     expect(week.status).toBe('pending')
@@ -162,7 +162,7 @@ describe.skipIf(!db)('Corrección de jornadas por el supervisor', () => {
       rejectedEntryIds: [entryIds['2026-10-26']!],
       reason: 'El lunes fue jornada activa',
     })
-    const history = await team.history(ids.boss, ids.worker, WEEK)
+    const history = await team.history(actor(ids.boss), ids.worker, WEEK)
 
     expect(history.map((item) => item.kind)).toEqual(
       expect.arrayContaining(['rejected', 'corrected_supervisor', 'approved']),
@@ -183,7 +183,7 @@ describe.skipIf(!db)('Corrección de jornadas por el supervisor', () => {
       clockOut: { from: null, to: mx('2026-10-27T17:30:00').toISOString() },
     })
 
-    await expect(team.history(ids.other, ids.worker, WEEK)).rejects.toThrow('no encontrado en tu equipo')
+    await expect(team.history(actor(ids.other), ids.worker, WEEK)).rejects.toThrow('no encontrado en tu equipo')
   })
 
   describe('por HTTP', () => {
