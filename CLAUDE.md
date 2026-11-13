@@ -200,7 +200,7 @@ Es el módulo que se presentará como terminado. Debe quedar **igual que la app 
 - **Cálculo de horas:** el del documento funcional, no el de la app desplegada (ver «Reglas de cálculo»).
 - **Tipos de jornada:** solo Activa / Inactiva (la app desplegada tiene cuatro).
 - **Sin conexión, mixto:** con red la hora la pone el servidor; sin red el fichaje se guarda en el teléfono con la hora del dispositivo, se sube al reconectar y queda marcado como «fichado sin conexión».
-- **Datos:** se empieza limpio; la migración de empleados e historial desde Supabase se hará después.
+- **Datos:** se empezó limpio. Desde el 2026-11-13 hay un importador de la app anterior (ver «Importar datos de la app anterior»).
 - **Se conserva de la app desplegada:** rechazo **por días** (el supervisor marca los días con problema; el colaborador corrige solo esos y reenvía), corrección de jornadas por el supervisor con historial, comentario por jornada, orden de trabajo adjunta, avisos push al rechazar, CSV de nómina.
 - **Medianoche:** una jornada abierta sigue siendo la activa hasta las 08:00 del día siguiente y cuenta para el día de la entrada. Si se cerró de madrugada, se sigue mostrando hasta las 08:00 y hasta entonces no se puede fichar la de hoy (igual que la app desplegada).
 - **Zona horaria:** el dispositivo envía su zona (IANA) en cada petición y el servidor calcula con ella el día de la jornada; la hora la pone siempre el servidor y se guarda en UTC. Revergy tiene sedes en zonas distintas (Sonora va una hora por detrás del centro).
@@ -241,6 +241,23 @@ Es el módulo que se presentará como terminado. Debe quedar **igual que la app 
 8. Sin conexión (PWA).
 9. Orden de trabajo (Azure Blob) y avisos push.
 10. Producción: Azure SQL, migraciones en el despliegue, grupos de roles, empleados reales.
+
+### Importar datos de la app anterior
+
+`api/src/db/importLegacy.ts` lleva a la base de datos los empleados y registros exportados de Supabase: `data/users_rows.csv` y `data/registros_tiempos_rows.csv`. **`data/` tiene datos personales reales (RFC, correos personales) y está en `.gitignore`: nunca se sube.**
+
+```powershell
+cd api; npm run db:import-legacy              # simulación contra la base local: no guarda nada
+cd api; npm run db:import-legacy -- --apply   # guarda
+# Contra producción: conexión en api/.env.produccion (ignorado por git)
+cd api; npx tsx --env-file=.env.produccion src/db/importLegacy.ts [--apply]
+```
+
+- Por defecto **simula**: hace todo en una transacción y la deshace. El informe solo lleva recuentos.
+- Se puede repetir: no duplica empleados (por correo) ni jornadas (por persona y día). Sirve para traer lo que se siga fichando en la app anterior hasta apagarla.
+- **Reglas confirmadas el 2026-11-13:** solo usuarios con correo de empresa; sin RFC ni correo personal; número provisional `MIG-<id>`; sin supervisor (lo asigna RRHH); todo tipo de jornada antiguo pasa a Activa; las analíticas que falten se añaden sin nombre; fuera los registros de cuentas que no están en usuarios. Los registros dudosos (muy cortos, muy largos, sin salida) entran como están para que el supervisor los revise.
+- No se importan las órdenes de trabajo adjuntas (etapa 9) ni el historial de aprobaciones: el estado y el motivo de rechazo van en la propia jornada.
+- Con el archivo del 2026-11-13: 48 empleados, 7 departamentos y 311 jornadas (12 fuera, de 2 cuentas desconocidas).
 
 ### Datos que registra el colaborador cada día
 
