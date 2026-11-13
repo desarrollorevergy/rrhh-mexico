@@ -1,6 +1,6 @@
 import { CalendarDays, ClipboardCheck, Clock } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { useAuth } from '../../auth/authContext.ts'
+import { hasRole, useAuth } from '../../auth/authContext.ts'
 
 // Pantallas del Parte de Horas con su menú inferior, como en la app de fichaje.
 export default function TimesheetLayout() {
@@ -9,8 +9,8 @@ export default function TimesheetLayout() {
   const items = [
     { to: '/parte-horas', end: true, label: 'Fichar', icon: Clock },
     { to: '/parte-horas/semana', end: false, label: 'Mi Semana', icon: CalendarDays },
-    // Solo para quien tiene gente a su cargo. La API lo vuelve a comprobar.
-    ...(roles.includes('supervisor')
+    // Para quien tiene gente a su cargo y para el administrador. La API lo vuelve a comprobar.
+    ...(hasRole(roles, 'supervisor')
       ? [{ to: '/parte-horas/equipo', end: false, label: 'Supervisión', icon: ClipboardCheck }]
       : []),
   ]

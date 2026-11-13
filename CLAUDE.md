@@ -35,7 +35,7 @@ Portal web de Recursos Humanos para Revergy México. Sustituye a una Power App c
 
 ### Fases
 
-- **Fase 0 (terminada en código el 2026-11-12):** base del proyecto: estructura, carcasa visual, autenticación (en producción), base de datos local y motor de aprobaciones genérico. En Azure faltan la base de datos y los grupos de Entra ID para los roles.
+- **Fase 0 (terminada en código el 2026-11-12):** base del proyecto: estructura, carcasa visual, autenticación (en producción), base de datos local y motor de aprobaciones genérico. En Azure la base de datos se creó el 2026-11-12; faltan los grupos de Entra ID para los roles y desplegar el código que la usa.
 - **Fase 1:** Parte de Horas + Ficha de Empleado básica (lo mínimo que necesita el parte de horas). Migrar datos de la Power App.
 - Después, por dependencias: Vacaciones e Incremento → Bajas → Perfiles + Contratación + CVs → Onboarding → Nómina → Buzón.
 
@@ -45,7 +45,7 @@ Portal web de Recursos Humanos para Revergy México. Sustituye a una Power App c
 |---|---|
 | Front | React + Vite + TypeScript (`web/`) |
 | API | Node + Express 5 + TypeScript, ESM (`"type": "module"`, `NodeNext`), `tsx` en desarrollo (`api/`) |
-| Base de datos | Azure SQL Database (aún no creada). En local: **SQL Server 2025 Developer instalado en Windows** (sin Docker), base `rrhh`, usuario de SQL `rrhh_app`. Librería: `mssql`. Scripts SQL versionados en `db/migrations/` |
+| Base de datos | Azure SQL Database: servidor `rrhh-mexico.database.windows.net`, base `rrhh`, creada el 2026-11-12 con la **oferta gratuita sin servidor** (32 GB y 100 000 s de núcleo al mes; al agotarse se pausa hasta el mes siguiente, sin cobro), usuario de aplicación `rrhh_app`. Aún no probada con la app desplegada. En local: **SQL Server 2025 Developer instalado en Windows** (sin Docker), base `rrhh`, usuario de SQL `rrhh_app`. Librería: `mssql`. Scripts SQL versionados en `db/migrations/` |
 | Archivos | Azure Blob Storage (más adelante) |
 | Correo | Microsoft Graph desde un buzón compartido (más adelante) |
 | Hosting | Azure App Service Linux **`rrhh-mexico`** (grupo de recursos `rrhh-mexico_group`), Node 24 LTS, plan Básico **B1**, región **West US 3** |
@@ -125,7 +125,7 @@ cd api; npm run db:seed      # carga datos de prueba ficticios (solo con DEV_AUT
 - **Local:** `DEV_AUTH=true` en `api/.env` activa `devAuth`, que fabrica la cabecera real a partir del usuario de prueba elegido (cabecera `X-Dev-User`). Usuarios ficticios en `api/src/auth/devUsers.ts`. La API **no arranca** con `DEV_AUTH=true` si detecta producción o Azure (`WEBSITE_SITE_NAME`).
 - **Front** (`web/src/auth/`): `AuthProvider` carga `/api/me` antes de mostrar la app; `useAuth()` da el usuario. El selector `web/src/dev/DevUserSwitcher.tsx` solo se carga con `import.meta.env.DEV`.
 - **Supervisor "por datos":** sale de la tabla `employees` (`api/src/db/employees.ts`): lo es quien tiene empleados activos con su `supervisor_id`. En producción nadie lo es hasta que exista la base de datos en Azure.
-- **Pendiente:** en producción todos son solo Colaborador hasta que se creen los grupos de Entra ID, el registro de aplicación emita el claim `groups` y se definan las variables `ENTRA_GROUP_*` en el App Service. El menú de módulos aún no se filtra por rol.
+- **Pendiente:** en producción (con base de datos conectada desde el 2026-11-13) todos son solo Colaborador hasta que se creen los grupos de Entra ID, el registro de aplicación emita el claim `groups` y se definan las variables `ENTRA_GROUP_*` en el App Service. El menú de módulos aún no se filtra por rol.
 
 ### Roles
 
@@ -133,6 +133,7 @@ cd api; npm run db:seed      # carga datos de prueba ficticios (solo con DEV_AUT
 |---|---|
 | Colaborador | Cualquier empleado autenticado |
 | Supervisor / Responsable | **Por datos**: tiene empleados a su cargo en la ficha de empleado |
+| Administrador | Grupo de Entra ID (`ENTRA_GROUP_ADMIN`) |
 | RRHH | Grupo de Entra ID |
 | Dirección General | Grupo de Entra ID |
 | Controlling | Grupo de Entra ID |
@@ -141,6 +142,17 @@ cd api; npm run db:seed      # carga datos de prueba ficticios (solo con DEV_AUT
 | Comité de Ética | Grupo de Entra ID |
 
 Los nombres de grupos e IDs se configuran por variables de entorno, nunca en el código.
+
+### Administrador (confirmado el 2026-11-13)
+
+Entra a todos los módulos y **actúa**: hace lo mismo que RRHH y que el supervisor de cualquier empleado. Todo queda en el historial con su nombre.
+
+- **Límites:** no decide sobre sus propias solicitudes (su parte de horas lo valida su supervisor) y, como administrador, **no** tendrá acceso al Buzón de Quejas. Sí podrá verlo con el selector «Ver como» en los roles RRHH o Comité de Ética (confirmado el 2026-11-13).
+- **Necesita ficha de empleado** para fichar y para validar partes de horas (las decisiones se guardan a nombre de un empleado). Sin ficha sí puede entrar a «Ficha de Empleado» y darse de alta.
+- **Implementación:** `isAdmin` en `api/src/auth/roles.ts`. `requireRole` lo deja pasar siempre; en supervisión alcanza a todos menos a sí mismo (`scopeSql` en `api/src/timesheet/team.ts`); en el motor de aprobaciones encaja con cualquier aprobador (`matches` en `stateMachine.ts`). En el front, `hasRole` (`web/src/auth/authContext.ts`). Usuario de prueba: `dev-admin`.
+- **Selector «Ver como»:** en la cabecera, solo para administradores (`web/src/layout/RoleSwitcher.tsx`). Elige un rol y pasa a tener **solo** ese rol más Colaborador, en pantallas y en permisos; sigue siendo él (su nombre en el historial), no suplanta a otra persona. El front envía la cabecera `X-View-As-Role` y la API recorta los roles (`viewAs` en `api/src/auth/roles.ts`) solo si es administrador de verdad. «Supervisor» alcanza solo a su equipo directo. `/api/me` devuelve `isAdmin` y `viewAs`.
+- **Al construir el Buzón:** no usar `requireRole` ni `hasRole`, porque dejarían entrar al administrador sin haber elegido rol.
+- **A confirmar:** en el motor el administrador puede dar también las aprobaciones de Dirección, Controlling y Almacén. Hoy no tiene efecto (esos módulos no existen); revisarlo al construir Contratación y Bajas.
 
 ## Diseño (sistema corporativo Revergy)
 
@@ -276,9 +288,8 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 
 ## Dudas pendientes (no decidir sin confirmar)
 
-Las dudas 1 a 7 y la 10 (sábado, umbral de extra, festivos, fichaje olvidado, ubicación, medianoche, sin conexión y redondeo) quedaron resueltas el 2026-11-12; están en la sección del módulo 01. Se conserva la numeración.
+Las dudas 1 a 7 y la 10 (sábado, umbral de extra, festivos, fichaje olvidado, ubicación, medianoche, sin conexión y redondeo) quedaron resueltas el 2026-11-12; están en la sección del módulo 01. La 8 (rol SuperAdmin) se resolvió el 2026-11-13 con el rol Administrador. Se conserva la numeración.
 
-8. **Rol SuperAdmin:** existe en la Power App (lista `MatrizRoles`) y no en la tabla de roles de este archivo.
 9. **Identificación del empleado:** ¿se enlaza el usuario de Entra ID con la ficha por correo (como la Power App) o por ID de objeto de Entra?
 11. **Aprobar la propia solicitud:** el motor de aprobaciones lo impide (por ejemplo, alguien de RRHH no puede dar la aprobación de RRHH a su propia solicitud). Es una regla asumida, no está en el documento. ¿Es correcta? Si lo es, ¿quién aprueba en ese caso?
 

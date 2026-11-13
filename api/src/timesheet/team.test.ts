@@ -108,12 +108,12 @@ describe.skipIf(!db)('Supervisión del equipo', () => {
   })
 
   const statuses = async () => {
-    const week = await team.detail(ids.boss, ids.worker, WEEK)
+    const week = await team.detail(actor(ids.boss), ids.worker, WEEK)
     return Object.fromEntries(week.days.map((day) => [day.workDate.slice(8), day.status]))
   }
 
   it('el consolidado muestra solo a su equipo directo', async () => {
-    const summary = await team.summary(ids.boss)
+    const summary = await team.summary(actor(ids.boss))
     expect(summary).toHaveLength(1)
     expect(summary[0]).toMatchObject({
       employeeId: ids.worker,
@@ -125,12 +125,12 @@ describe.skipIf(!db)('Supervisión del equipo', () => {
       totals: { normal: h(16), extra: h(1), sunday: 0, holiday: 0, total: h(17), perDiems: 1 },
     })
     // La otra supervisora no ve a este colaborador, y quien no tiene equipo no ve nada
-    expect(await team.summary(ids.other)).toEqual([])
-    expect(await team.summary(ids.worker)).toEqual([])
+    expect(await team.summary(actor(ids.other))).toEqual([])
+    expect(await team.summary(actor(ids.worker))).toEqual([])
   })
 
   it('el detalle trae la semana día por día', async () => {
-    const week = await team.detail(ids.boss, ids.worker, '2026-11-05')
+    const week = await team.detail(actor(ids.boss), ids.worker, '2026-11-05')
     expect(week).toMatchObject({ weekStart: WEEK, weekEnd: '2026-11-08', status: 'pending', employeeName: `worker ${tag}` })
     expect(week.days.map((day) => [day.workDate, day.total, day.complete])).toEqual([
       ['2026-11-02', h(9), true],
@@ -140,7 +140,7 @@ describe.skipIf(!db)('Supervisión del equipo', () => {
   })
 
   it('no se puede ver ni validar a quien no es de su equipo', async () => {
-    await expect(team.detail(ids.other, ids.worker, WEEK)).rejects.toThrow('no encontrado en tu equipo')
+    await expect(team.detail(actor(ids.other), ids.worker, WEEK)).rejects.toThrow('no encontrado en tu equipo')
     await expect(team.approve(actor(ids.other), ids.worker, WEEK)).rejects.toThrow('no encontrado en tu equipo')
     await expect(
       team.reject(actor(ids.other), ids.worker, WEEK, { rejectedEntryIds: [entryIds['2026-11-04']!], reason: 'x' }),
@@ -206,7 +206,36 @@ describe.skipIf(!db)('Supervisión del equipo', () => {
       reason: 'La analítica del lunes no es correcta',
     })
     expect(await statuses()).toEqual({ '02': 'rejected', '03': 'pending', '04': 'pending' })
-    expect((await team.summary(ids.boss))[0]).toMatchObject({ status: 'rejected' })
+    expect((await team.summary(actor(ids.boss)))[0]).toMatchObject({ status: 'rejected' })
+  })
+
+  describe('administrador', () => {
+    const admin = (employeeId: number): Actor => ({ employeeId, roles: ['colaborador', 'admin'] })
+
+    it('ve las semanas de todos, aunque no sean de su equipo', async () => {
+      const summary = await team.summary(admin(ids.stranger))
+      expect(summary.some((row) => row.employeeId === ids.worker)).toBe(true)
+      expect((await team.detail(admin(ids.stranger), ids.worker, WEEK)).employeeId).toBe(ids.worker)
+    })
+
+    it('valida la semana de alguien que no es de su equipo y queda en el historial', async () => {
+      await team.reject(admin(ids.stranger), ids.worker, WEEK, {
+        rejectedEntryIds: [entryIds['2026-11-02']!],
+        reason: 'Revisado por administración',
+      })
+      const history = await team.history(admin(ids.stranger), ids.worker, WEEK)
+      // Se busca por el motivo: dos rechazos pueden caer en el mismo segundo.
+      expect(history).toContainEqual(expect.objectContaining({ kind: 'rejected', reason: 'Revisado por administración' }))
+    })
+
+    it('no alcanza su propia semana: la valida su supervisor', async () => {
+      const summary = await team.summary(admin(ids.worker))
+      expect(summary.some((row) => row.employeeId === ids.worker)).toBe(false)
+      await expect(team.detail(admin(ids.worker), ids.worker, WEEK)).rejects.toThrow('no encontrado en tu equipo')
+      await expect(
+        team.reject(admin(ids.worker), ids.worker, WEEK, { rejectedEntryIds: [entryIds['2026-11-02']!], reason: 'x' }),
+      ).rejects.toThrow('no encontrado en tu equipo')
+    })
   })
 
   describe('por HTTP', () => {

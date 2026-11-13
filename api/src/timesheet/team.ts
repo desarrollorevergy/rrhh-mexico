@@ -2,6 +2,7 @@ import sql from 'mssql'
 import type { ApprovalService } from '../approvals/service.js'
 import { ApprovalError } from '../approvals/types.js'
 import type { Actor } from '../auth/employee.js'
+import { isAdmin } from '../auth/roles.js'
 import type { DbConfig } from '../config/env.js'
 import { getPool } from '../db/pool.js'
 import { createCorrections, type ChangeSet, type CorrectionInput } from './corrections.js'
@@ -17,7 +18,8 @@ import {
 } from './service.js'
 
 // Supervisión del Parte de Horas: el supervisor ve y valida las semanas de su equipo,
-// es decir, de los empleados que lo tienen como supervisor directo.
+// es decir, de los empleados que lo tienen como supervisor directo. El administrador ve y valida
+// las de todos los empleados.
 
 /** Tipo de solicitud en el motor de aprobaciones. Una por colaborador y semana. */
 const REQUEST_TYPE = 'timesheet_week'
@@ -86,18 +88,27 @@ export function parseReject(body: unknown): { rejectedEntryIds: number[]; reason
   return { rejectedEntryIds: [...new Set(ids)], reason }
 }
 
+/**
+ * A quién alcanza quien supervisa (condición SQL sobre `e`, con el parámetro @actorId):
+ * el supervisor, a su equipo directo; el administrador, a todos menos a sí mismo, porque
+ * su propia semana la valida su supervisor.
+ */
+function scopeSql(actor: Actor): string {
+  return isAdmin(actor.roles) ? 'e.id <> @actorId' : 'e.supervisor_id = @actorId'
+}
+
 export function createTeamService(options: { db: DbConfig; approvals: ApprovalService }) {
   const { db, approvals } = options
   const corrections = createCorrections(db)
 
-  /** Jornadas de los subordinados directos, opcionalmente de una semana o de una persona. */
+  /** Jornadas de las personas a su alcance, opcionalmente de una semana o de una persona. */
   async function teamEntries(
-    supervisorId: number,
+    actor: Actor,
     filter: { weekStart?: DateKey; employeeId?: number } = {},
   ): Promise<TeamEntryRow[]> {
     const pool = await getPool(db)
-    const request = pool.request().input('supervisorId', sql.Int, supervisorId)
-    const where = ['e.supervisor_id = @supervisorId']
+    const request = pool.request().input('actorId', sql.Int, actor.employeeId)
+    const where = [scopeSql(actor)]
     if (filter.weekStart) {
       request.input('from', sql.Date, filter.weekStart).input('to', sql.Date, addDays(filter.weekStart, 6))
       where.push('t.work_date BETWEEN @from AND @to')
@@ -138,17 +149,17 @@ export function createTeamService(options: { db: DbConfig; approvals: ApprovalSe
     }
   }
 
-  /** Semana de un subordinado directo, lista para validar. 404 si no es de su equipo. */
-  async function loadWeek(supervisorId: number, employeeId: number, weekStart: DateKey): Promise<TeamEntryRow[]> {
+  /** Semana de alguien a su alcance, lista para validar. 404 si no lo está. */
+  async function loadWeek(actor: Actor, employeeId: number, weekStart: DateKey): Promise<TeamEntryRow[]> {
     const pool = await getPool(db)
     const member = await pool
       .request()
       .input('employeeId', sql.Int, employeeId)
-      .input('supervisorId', sql.Int, supervisorId)
-      .query('SELECT 1 FROM employees WHERE id = @employeeId AND supervisor_id = @supervisorId')
+      .input('actorId', sql.Int, actor.employeeId)
+      .query(`SELECT 1 FROM employees AS e WHERE e.id = @employeeId AND ${scopeSql(actor)}`)
     // Quien no es de su equipo se trata igual que alguien que no existe.
     if (member.recordset.length === 0) throw new TimesheetError(404, 'Colaborador no encontrado en tu equipo')
-    return teamEntries(supervisorId, { employeeId, weekStart })
+    return teamEntries(actor, { employeeId, weekStart })
   }
 
   /**
@@ -177,9 +188,9 @@ export function createTeamService(options: { db: DbConfig; approvals: ApprovalSe
     }
   }
 
-  async function detail(supervisorId: number, employeeId: number, date: DateKey): Promise<TeamWeekDetail> {
+  async function detail(actor: Actor, employeeId: number, date: DateKey): Promise<TeamWeekDetail> {
     const weekStart = weekStartOf(date)
-    const entries = await loadWeek(supervisorId, employeeId, weekStart)
+    const entries = await loadWeek(actor, employeeId, weekStart)
     const pool = await getPool(db)
     const member = await pool
       .request()
@@ -212,26 +223,26 @@ export function createTeamService(options: { db: DbConfig; approvals: ApprovalSe
       const found = await pool
         .request()
         .input('id', sql.Int, entryId)
-        .input('supervisorId', sql.Int, actor.employeeId)
+        .input('actorId', sql.Int, actor.employeeId)
         .query<{ employeeId: number; workDate: DateKey }>(`
           SELECT t.employee_id AS employeeId, CONVERT(char(10), t.work_date, 23) AS workDate
           FROM time_entries AS t JOIN employees AS e ON e.id = t.employee_id
-          WHERE t.id = @id AND e.supervisor_id = @supervisorId`)
+          WHERE t.id = @id AND ${scopeSql(actor)}`)
       const entry = found.recordset[0]
       // La jornada de alguien que no es de su equipo se trata como si no existiera.
       if (!entry) throw new TimesheetError(404, 'Jornada no encontrada')
 
       await corrections.apply(entryId, input, actor.employeeId, 'supervisor')
-      return detail(actor.employeeId, entry.employeeId, entry.workDate)
+      return detail(actor, entry.employeeId, entry.workDate)
     },
 
     /**
      * Historial de la semana, del más reciente al más antiguo: decisiones de validación
      * (del motor de aprobaciones) y correcciones de jornadas.
      */
-    async history(supervisorId: number, employeeId: number, date: DateKey): Promise<HistoryItem[]> {
+    async history(actor: Actor, employeeId: number, date: DateKey): Promise<HistoryItem[]> {
       const weekStart = weekStartOf(date)
-      await loadWeek(supervisorId, employeeId, weekStart) // comprueba que es de su equipo
+      await loadWeek(actor, employeeId, weekStart) // comprueba que está a su alcance
       const pool = await getPool(db)
 
       const [decisions, changes] = await Promise.all([
@@ -282,8 +293,8 @@ export function createTeamService(options: { db: DbConfig; approvals: ApprovalSe
     },
 
     /** Consolidado semanal del equipo: una fila por colaborador y semana. */
-    async summary(supervisorId: number): Promise<TeamWeekSummary[]> {
-      const [entries, holidays] = await Promise.all([teamEntries(supervisorId), holidaySet()])
+    async summary(actor: Actor): Promise<TeamWeekSummary[]> {
+      const [entries, holidays] = await Promise.all([teamEntries(actor), holidaySet()])
 
       const groups = new Map<string, TeamEntryRow[]>()
       for (const entry of entries) {
@@ -313,7 +324,7 @@ export function createTeamService(options: { db: DbConfig; approvals: ApprovalSe
 
     /** Aprueba todas las jornadas de la semana. */
     async approve(actor: Actor, employeeId: number, weekStart: DateKey): Promise<TeamWeekDetail> {
-      const entries = await loadWeek(actor.employeeId, employeeId, weekStart)
+      const entries = await loadWeek(actor, employeeId, weekStart)
       if (entries.length === 0) throw new TimesheetError(409, 'La semana no tiene jornadas')
       if (entries.every((entry) => entry.status === 'approved')) throw new TimesheetError(409, 'La semana ya está aprobada')
       if (entries.some((entry) => !entry.clockOut)) {
@@ -334,7 +345,7 @@ export function createTeamService(options: { db: DbConfig; approvals: ApprovalSe
           SET status = 'approved', reject_reason = NULL, reviewed_by = @reviewer, reviewed_at = SYSUTCDATETIME(),
               correction_sent_at = NULL, correction_note = NULL, updated_at = SYSUTCDATETIME()
           WHERE employee_id = @employeeId AND work_date BETWEEN @from AND @to`)
-      return detail(actor.employeeId, employeeId, weekStart)
+      return detail(actor, employeeId, weekStart)
     },
 
     /**
@@ -347,7 +358,7 @@ export function createTeamService(options: { db: DbConfig; approvals: ApprovalSe
       weekStart: DateKey,
       input: { rejectedEntryIds: number[]; reason: string },
     ): Promise<TeamWeekDetail> {
-      const entries = await loadWeek(actor.employeeId, employeeId, weekStart)
+      const entries = await loadWeek(actor, employeeId, weekStart)
       const weekIds = new Set(entries.map((entry) => entry.id))
       if (!input.rejectedEntryIds.every((id) => weekIds.has(id))) {
         throw new TimesheetError(400, 'Algún día marcado no pertenece a esta semana')
@@ -372,7 +383,7 @@ export function createTeamService(options: { db: DbConfig; approvals: ApprovalSe
             reviewed_by = @reviewer, reviewed_at = SYSUTCDATETIME(),
             correction_sent_at = NULL, correction_note = NULL, updated_at = SYSUTCDATETIME()
         WHERE employee_id = @employeeId AND work_date BETWEEN @from AND @to`)
-      return detail(actor.employeeId, employeeId, weekStart)
+      return detail(actor, employeeId, weekStart)
     },
   }
 }

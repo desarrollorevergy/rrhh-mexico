@@ -12,7 +12,7 @@ import {
   UserPlus,
   type LucideIcon,
 } from 'lucide-react'
-import type { Role } from '../auth/authContext.ts'
+import { hasRole, type Role } from '../auth/authContext.ts'
 
 export interface AppModule {
   num: string
@@ -31,7 +31,7 @@ export interface AppModule {
 export function isModuleAvailable(module: AppModule, user: { roles: Role[]; hasDatabase: boolean }): boolean {
   // Sin base de datos en el servidor ningún módulo puede funcionar todavía.
   if (!user.hasDatabase) return false
-  return module.available || (module.availableFor?.some((role) => user.roles.includes(role)) ?? false)
+  return module.available || (module.availableFor !== undefined && hasRole(user.roles, ...module.availableFor))
 }
 
 // Catálogo de los 11 módulos (numeración de CLAUDE.md).

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useAuth } from '../../auth/authContext.ts'
+import { hasRole, useAuth } from '../../auth/authContext.ts'
 import { EmployeesTab } from './EmployeesTab.tsx'
 import { HolidaysTab } from './HolidaysTab.tsx'
 
@@ -17,7 +17,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState<TabId>('employees')
 
   // La API también lo impide; aquí solo se evita mostrar una pantalla vacía.
-  if (!roles.includes('rrhh')) {
+  if (!hasRole(roles, 'rrhh')) {
     return (
       <div className="px-4 py-10 min-[700px]:px-10">
         <h1 className="text-2xl font-bold text-text">Sin acceso</h1>

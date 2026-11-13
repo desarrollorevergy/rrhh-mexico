@@ -1,9 +1,11 @@
 // Roles que se determinan por pertenencia a un grupo de Entra ID.
-export const GROUP_ROLES = ['rrhh', 'direccion', 'controlling', 'almacen', 'it', 'etica'] as const
+// «admin» es el administrador de la plataforma: entra y actúa en todos los módulos (ver auth/roles.ts).
+export const GROUP_ROLES = ['admin', 'rrhh', 'direccion', 'controlling', 'almacen', 'it', 'etica'] as const
 export type GroupRole = (typeof GROUP_ROLES)[number]
 
 // Variable de entorno con el ID del grupo de Entra ID de cada rol.
 const GROUP_ENV: Record<GroupRole, string> = {
+  admin: 'ENTRA_GROUP_ADMIN',
   rrhh: 'ENTRA_GROUP_RRHH',
   direccion: 'ENTRA_GROUP_DIRECCION',
   controlling: 'ENTRA_GROUP_CONTROLLING',

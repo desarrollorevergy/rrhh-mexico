@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Link } from 'react-router-dom'
 import logo from '../assets/revergy-logo.png'
 import { ROLE_LABELS, useAuth } from '../auth/authContext.ts'
+import { RoleSwitcher } from './RoleSwitcher.tsx'
 import { ThemeToggle } from './ThemeToggle.tsx'
 
 // El selector de usuario de prueba solo existe en desarrollo; en producción ni se descarga.
@@ -26,6 +27,7 @@ export function Header() {
         <span title={roles} className="truncate text-[15px] font-semibold text-secondary">
           {user.name}
         </span>
+        <RoleSwitcher />
         {DevUserSwitcher && (
           <Suspense fallback={null}>
             <DevUserSwitcher />

@@ -52,6 +52,8 @@ export const DEV_USERS: DevUser[] = [
     email: 'etica@example.test',
     groupRoles: ['etica'],
   },
+  // Al final de la lista: el número de empleado de prueba sale de la posición.
+  { id: 'dev-admin', name: 'Administrador de Prueba', email: 'admin@example.test', groupRoles: ['admin'] },
 ]
 
 export const DEFAULT_DEV_USER_ID = 'dev-colaborador'
