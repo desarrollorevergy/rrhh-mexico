@@ -7,7 +7,6 @@ import {
   LogOut,
   MapPin,
   MessageSquare,
-  TrendingUp,
   User,
   UserPlus,
   type LucideIcon,
@@ -34,7 +33,7 @@ export function isModuleAvailable(module: AppModule, user: { roles: Role[]; hasD
   return module.available || (module.availableFor !== undefined && hasRole(user.roles, ...module.availableFor))
 }
 
-// Catálogo de los 11 módulos (numeración de CLAUDE.md).
+// Catálogo de los 10 módulos (numeración de CLAUDE.md).
 export const MODULES: AppModule[] = [
   {
     num: '01',
@@ -112,14 +111,6 @@ export const MODULES: AppModule[] = [
   },
   {
     num: '10',
-    title: 'Incremento Salarial / Puesto',
-    description: 'Solicitudes de incremento de salario y/o cambio de puesto con flujo de aprobación.',
-    icon: TrendingUp,
-    path: '/incrementos',
-    available: false,
-  },
-  {
-    num: '11',
     title: 'Buzón de Quejas',
     description: 'Canal confidencial y anónimo para quejas y sugerencias.',
     icon: MessageSquare,
