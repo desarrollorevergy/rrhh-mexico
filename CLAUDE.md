@@ -17,7 +17,7 @@ Este archivo da contexto a Claude Code en cada sesión. Mantenlo actualizado cua
 
 Portal web de Recursos Humanos para Revergy México. Sustituye a una Power App con listas de SharePoint. El documento funcional completo está en `docs/Plataforma RRHH.pdf` (léelo cuando necesites detalle de un módulo).
 
-### Módulos (11)
+### Módulos (10)
 
 | # | Módulo | Resumen |
 |---|---|---|
@@ -30,14 +30,15 @@ Portal web de Recursos Humanos para Revergy México. Sustituye a una Power App c
 | 07 | Ficha de Empleado | Expediente; solo RRHH edita; el colaborador ve la suya en solo lectura |
 | 08 | Vacaciones / Ausentismos | Saldo por antigüedad (LFT 2023+); supervisor → RRHH; incapacidad exige documento IMSS |
 | 09 | Perfiles de Puesto | Catálogo; se reutiliza en Contratación |
-| 10 | Incremento Salarial / Puesto | Colaborador → supervisor → RRHH; actualiza la ficha |
-| 11 | Buzón de Quejas | Anónimo, sin login, folio automático; solo RRHH/Comité de Ética lo ve |
+| 10 | Buzón de Quejas | Anónimo, sin login, folio automático; solo RRHH/Comité de Ética lo ve |
+
+El módulo «Incremento Salarial / Puesto» del documento funcional **se retiró** el 2026-11-13 por decisión del usuario: no se construye. El Buzón pasó del número 11 al 10.
 
 ### Fases
 
 - **Fase 0 (terminada en código el 2026-11-12):** base del proyecto: estructura, carcasa visual, autenticación (en producción), base de datos local y motor de aprobaciones genérico. En Azure la base de datos se creó el 2026-11-12; faltan los grupos de Entra ID para los roles y desplegar el código que la usa.
 - **Fase 1:** Parte de Horas + Ficha de Empleado básica (lo mínimo que necesita el parte de horas). Migrar datos de la Power App.
-- Después, por dependencias: Vacaciones e Incremento → Bajas → Perfiles + Contratación + CVs → Onboarding → Nómina → Buzón.
+- Después, por dependencias: Vacaciones → Bajas → Perfiles + Contratación + CVs → Onboarding → Nómina → Buzón.
 
 ## Stack técnico
 
@@ -124,6 +125,7 @@ cd api; npm run db:seed      # carga datos de prueba ficticios (solo con DEV_AUT
 - **API** (`api/src/auth/`): `principal.ts` decodifica la cabecera; `roles.ts` calcula los roles; `middleware.ts` tiene `authenticate` (401), `requireRole` (403) y `getAuth(res)` para leer el usuario en una ruta. Todo `/api` exige usuario salvo `/api/health`. `GET /api/me` devuelve usuario y roles.
 - **Local:** `DEV_AUTH=true` en `api/.env` activa `devAuth`, que fabrica la cabecera real a partir del usuario de prueba elegido (cabecera `X-Dev-User`). Usuarios ficticios en `api/src/auth/devUsers.ts`. La API **no arranca** con `DEV_AUTH=true` si detecta producción o Azure (`WEBSITE_SITE_NAME`).
 - **Front** (`web/src/auth/`): `AuthProvider` carga `/api/me` antes de mostrar la app; `useAuth()` da el usuario. El selector `web/src/dev/DevUserSwitcher.tsx` solo se carga con `import.meta.env.DEV`.
+- **Ficha automática (2026-11-13):** quien entra al Parte de Horas sin ficha recibe una básica en ese momento (`ensureEmployee` en `api/src/db/employees.ts`): nombre y correo de su cuenta, número provisional `AUTO-<id>`, sin supervisor ni departamento. Puede fichar enseguida, pero **sus semanas no las puede validar nadie salvo el administrador** hasta que RRHH le asigne supervisor. Una ficha dada de baja no se reactiva sola. Cualquier cuenta M365 del inquilino que entre al módulo genera ficha.
 - **Supervisor "por datos":** sale de la tabla `employees` (`api/src/db/employees.ts`): lo es quien tiene empleados activos con su `supervisor_id`. En producción nadie lo es hasta que exista la base de datos en Azure.
 - **Pendiente:** en producción (con base de datos conectada desde el 2026-11-13) todos son solo Colaborador hasta que se creen los grupos de Entra ID, el registro de aplicación emita el claim `groups` y se definan las variables `ENTRA_GROUP_*` en el App Service. El menú de módulos aún no se filtra por rol.
 
@@ -165,7 +167,7 @@ Entra a todos los módulos y **actúa**: hace lo mismo que RRHH y que el supervi
 
 ## Motor de aprobaciones (genérico)
 
-Los módulos 01, 02, 03, 08 y 10 comparten el patrón "solicitud → uno o varios aprobadores → resultado". Se implementa **una vez** y se reutiliza:
+Los módulos 01, 02, 03 y 08 comparten el patrón "solicitud → uno o varios aprobadores → resultado". Se implementa **una vez** y se reutiliza:
 
 - Estados de una solicitud y transiciones permitidas.
 - Cadena de aprobadores por tipo de solicitud (ej. supervisor → RRHH; RRHH → Dirección).
@@ -230,7 +232,12 @@ Es el módulo que se presentará como terminado. Debe quedar **igual que la app 
    - Un día corregido sigue rechazado hasta que se envía; enviado, ya no se puede cambiar.
    - El motivo original se conserva en el día hasta la siguiente decisión del supervisor.
    - El reenvío queda en el historial del motor (`resubmitted`, con la nota) y la corrección en `time_entry_changes`.
-7. RRHH: semanas aprobadas y CSV de nómina.
+7. RRHH: semanas aprobadas y CSV de nómina — **hecha**: `/parte-horas/nomina` (pestaña «Nómina», solo RRHH y administrador) con filtros por período, departamento y búsqueda, detalle día por día y «Exportar CSV». API `/api/timesheet/payroll/*` (`summary`, `week`, `export`); `api/src/timesheet/payroll.ts`.
+   - **Solo lectura y solo semanas aprobadas** (todas sus jornadas aprobadas). RRHH no aprueba, rechaza ni corrige. Una semana no aprobada responde 404.
+   - El panel **no exige ficha de empleado** ni la crea: se monta antes que el resto de `/api/timesheet`.
+   - **CSV:** una línea por colaborador y semana, con exactamente las semanas a la vista tras filtrar. Columnas: `Periodo, No_Empleado, Empleado, Correo, Departamento, Analiticas, H_Normales, H_Extras, H_Domingo, H_Festivo, Dietas, Dias_Inactiva, Total_Horas`. Horas en decimal con dos cifras y punto (8 h 30 min → `8.50`); separador coma, BOM y CRLF para Excel; los textos que empiezan por `=`, `+`, `-` o `@` llevan apóstrofo para que Excel no los ejecute. **El formato no está validado con quien hace la nómina.**
+   - El detalle reutiliza la pantalla del supervisor en modo `readOnly` (sin historial).
+   - Pendiente: el resumen carga todas las jornadas y agrupa en memoria; habrá que acotarlo por fechas cuando crezca el histórico.
 8. Sin conexión (PWA).
 9. Orden de trabajo (Azure Blob) y avisos push.
 10. Producción: Azure SQL, migraciones en el despliegue, grupos de roles, empleados reales.
@@ -309,5 +316,5 @@ Se manejan datos personales (CURP, RFC, NSS, salario, incapacidades). Aplica la 
 - El repositorio de GitHub es **privado**.
 - Base de datos **Azure SQL**, no listas de SharePoint ni Supabase. Se valoró PostgreSQL el 2026-11-12 y se mantuvo SQL Server.
 - En local, SQL Server **instalado en Windows**, no en Docker (Docker Desktop no se instaló).
-- Front con framework (React) por la complejidad: 11 módulos y vistas por rol.
+- Front con framework (React) por la complejidad: 10 módulos y vistas por rol.
 - Las partes públicas (buzón anónimo, portal de postulantes) irán separadas de la app principal; se decidirá cómo al llegar a esos módulos.

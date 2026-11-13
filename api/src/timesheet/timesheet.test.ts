@@ -274,11 +274,5 @@ describe.skipIf(!db)('Fichaje con base de datos', () => {
       expect((await call(email, 'PUT', '/today/comment', { timeZone: MX, comment: 'nota' })).body.entry.comment).toBe('nota')
       expect((await call(email, 'POST', '/clock-out', { timeZone: MX })).body.entry.clockOut).not.toBeNull()
     })
-
-    it('quien no tiene ficha de empleado no puede fichar', async () => {
-      const res = await call(`sin-ficha-${tag}@example.test`, 'GET', `/today?timeZone=${MX}`)
-      expect(res.status).toBe(403)
-      expect(res.body.error).toContain('ficha de empleado')
-    })
   })
 })

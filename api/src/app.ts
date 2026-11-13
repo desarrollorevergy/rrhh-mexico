@@ -9,7 +9,8 @@ import { DEV_USERS, devIsSupervisor } from './auth/devUsers.js'
 import { authenticate, devAuth, getAuth, type SupervisorLookup } from './auth/middleware.js'
 import { loadConfig, type AppConfig } from './config/env.js'
 import { pingDb, supervisorLookupFromDb } from './db/employees.js'
-import { timesheetRouter } from './timesheet/routes.js'
+import { createPayrollService } from './timesheet/payroll.js'
+import { payrollRouter, timesheetRouter } from './timesheet/routes.js'
 import { createTimesheetService } from './timesheet/service.js'
 import { createTeamService } from './timesheet/team.js'
 
@@ -95,6 +96,8 @@ export function createApp(options: AppOptions = {}): Express {
     const approvals = createApprovalService({ db: config.db, includeDemo: config.devAuth })
 
     app.use('/api', adminRouter(createAdminRepository(config.db)))
+    // Antes que el resto de /api/timesheet: el panel de RRHH no exige ficha de empleado.
+    app.use('/api/timesheet/payroll', payrollRouter(createPayrollService({ db: config.db })))
     app.use(
       '/api/timesheet',
       timesheetRouter(

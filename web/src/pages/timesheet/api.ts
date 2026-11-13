@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut } from '../../api/client.ts'
+import { apiDownload, apiGet, apiPost, apiPut } from '../../api/client.ts'
 
 export type ShiftType = 'activa' | 'inactiva'
 
@@ -185,6 +185,31 @@ export const teamApi = {
     apiPut<TeamWeekDetail>(`/api/timesheet/team/entries/${entryId}`, changes),
   history: (employeeId: number, weekStart: string) =>
     apiGet<HistoryItem[]>(`/api/timesheet/team/week/history?employeeId=${employeeId}&date=${weekStart}`),
+}
+
+/** Una fila del reporte de nómina: la semana aprobada de un colaborador. */
+export interface PayrollWeek {
+  employeeId: number
+  employeeNumber: string
+  employeeName: string
+  email: string
+  departmentName: string | null
+  weekStart: string
+  weekEnd: string
+  projects: string[]
+  totals: WeekView['totals']
+  inactiveDays: number
+  approvedAt: string | null
+}
+
+/** Panel de RRHH: semanas aprobadas, de solo lectura. */
+export const payrollApi = {
+  summary: () => apiGet<PayrollWeek[]>('/api/timesheet/payroll/summary'),
+  week: (employeeId: number, weekStart: string) =>
+    apiGet<TeamWeekDetail>(`/api/timesheet/payroll/week?employeeId=${employeeId}&date=${weekStart}`),
+  /** CSV de nómina de las semanas indicadas. */
+  exportCsv: (weeks: { employeeId: number; weekStart: string }[]) =>
+    apiDownload('/api/timesheet/payroll/export', { weeks }),
 }
 
 /** Cambios de una corrección. Solo se envían los campos que cambian; las horas, como instantes ISO. */
