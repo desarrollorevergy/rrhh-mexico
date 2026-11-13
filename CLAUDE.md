@@ -232,7 +232,12 @@ Es el módulo que se presentará como terminado. Debe quedar **igual que la app 
    - Un día corregido sigue rechazado hasta que se envía; enviado, ya no se puede cambiar.
    - El motivo original se conserva en el día hasta la siguiente decisión del supervisor.
    - El reenvío queda en el historial del motor (`resubmitted`, con la nota) y la corrección en `time_entry_changes`.
-7. RRHH: semanas aprobadas y CSV de nómina.
+7. RRHH: semanas aprobadas y CSV de nómina — **hecha**: `/parte-horas/nomina` (pestaña «Nómina», solo RRHH y administrador) con filtros por período, departamento y búsqueda, detalle día por día y «Exportar CSV». API `/api/timesheet/payroll/*` (`summary`, `week`, `export`); `api/src/timesheet/payroll.ts`.
+   - **Solo lectura y solo semanas aprobadas** (todas sus jornadas aprobadas). RRHH no aprueba, rechaza ni corrige. Una semana no aprobada responde 404.
+   - El panel **no exige ficha de empleado** ni la crea: se monta antes que el resto de `/api/timesheet`.
+   - **CSV:** una línea por colaborador y semana, con exactamente las semanas a la vista tras filtrar. Columnas: `Periodo, No_Empleado, Empleado, Correo, Departamento, Analiticas, H_Normales, H_Extras, H_Domingo, H_Festivo, Dietas, Dias_Inactiva, Total_Horas`. Horas en decimal con dos cifras y punto (8 h 30 min → `8.50`); separador coma, BOM y CRLF para Excel; los textos que empiezan por `=`, `+`, `-` o `@` llevan apóstrofo para que Excel no los ejecute. **El formato no está validado con quien hace la nómina.**
+   - El detalle reutiliza la pantalla del supervisor en modo `readOnly` (sin historial).
+   - Pendiente: el resumen carga todas las jornadas y agrupa en memoria; habrá que acotarlo por fechas cuando crezca el histórico.
 8. Sin conexión (PWA).
 9. Orden de trabajo (Azure Blob) y avisos push.
 10. Producción: Azure SQL, migraciones en el despliegue, grupos de roles, empleados reales.

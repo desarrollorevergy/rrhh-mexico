@@ -1,9 +1,10 @@
-import { Router, type RequestHandler } from 'express'
+import { Router, type Request, type RequestHandler, type Response } from 'express'
 import { isValidDate } from '../admin/validation.js'
 import { getActor, requireEmployee, type Actor } from '../auth/employee.js'
 import { requireRole } from '../auth/middleware.js'
 import type { DbConfig } from '../config/env.js'
 import { parseCorrection } from './corrections.js'
+import { parseWeekKeys, type PayrollService } from './payroll.js'
 import { parseReject, parseWeekAction, type TeamService } from './team.js'
 import {
   parseClockIn,
@@ -13,6 +14,54 @@ import {
   TimesheetError,
   type TimesheetService,
 } from './service.js'
+
+/**
+ * Rutas de /api/timesheet/payroll: el panel de RRHH con las semanas aprobadas y el CSV de
+ * nómina. Solo RRHH (y el administrador). No exigen ficha de empleado: son de solo lectura.
+ */
+export function payrollRouter(payroll: PayrollService): Router {
+  const router = Router()
+  router.use(requireRole('rrhh'))
+
+  const handle =
+    (action: (req: Request, res: Response) => Promise<void>): RequestHandler =>
+    async (req, res) => {
+      try {
+        await action(req, res)
+      } catch (error) {
+        if (!(error instanceof TimesheetError)) throw error
+        res.status(error.status).json({ error: error.message })
+      }
+    }
+
+  router.get('/summary', handle(async (_req, res) => void res.json(await payroll.summary())))
+
+  router.get(
+    '/week',
+    handle(async (req, res) => {
+      const employeeId = Number(req.query.employeeId)
+      const date = req.query.date
+      if (!Number.isInteger(employeeId) || typeof date !== 'string' || !isValidDate(date)) {
+        throw new TimesheetError(400, 'Semana no válida')
+      }
+      res.json(await payroll.detail(employeeId, date))
+    }),
+  )
+
+  // Exporta exactamente las semanas que RRHH tiene a la vista tras filtrar.
+  router.post(
+    '/export',
+    handle(async (req, res) => {
+      const csv = await payroll.exportCsv(parseWeekKeys(req.body))
+      res
+        .type('text/csv; charset=utf-8')
+        .set('Content-Disposition', 'attachment; filename="reporte_nomina_semanal.csv"')
+        .send(csv)
+    }),
+  )
+
+  return router
+}
 
 /**
  * Rutas de /api/timesheet: el fichaje del propio colaborador. Van detrás de `authenticate`.

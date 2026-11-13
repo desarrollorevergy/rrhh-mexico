@@ -1,4 +1,4 @@
-import { CalendarDays, ClipboardCheck, Clock } from 'lucide-react'
+import { CalendarDays, ClipboardCheck, Clock, FileSpreadsheet } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { hasRole, useAuth } from '../../auth/authContext.ts'
 
@@ -12,6 +12,10 @@ export default function TimesheetLayout() {
     // Para quien tiene gente a su cargo y para el administrador. La API lo vuelve a comprobar.
     ...(hasRole(roles, 'supervisor')
       ? [{ to: '/parte-horas/equipo', end: false, label: 'Supervisión', icon: ClipboardCheck }]
+      : []),
+    // RRHH: semanas aprobadas y CSV de nómina.
+    ...(hasRole(roles, 'rrhh')
+      ? [{ to: '/parte-horas/nomina', end: false, label: 'Nómina', icon: FileSpreadsheet }]
       : []),
   ]
 

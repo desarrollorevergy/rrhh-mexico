@@ -11,6 +11,7 @@ const TimesheetLayout = lazy(() => import('./pages/timesheet/TimesheetLayout.tsx
 const TimesheetPage = lazy(() => import('./pages/timesheet/TimesheetPage.tsx'))
 const WeekPage = lazy(() => import('./pages/timesheet/WeekPage.tsx'))
 const TeamPage = lazy(() => import('./pages/timesheet/team/TeamPage.tsx'))
+const PayrollPage = lazy(() => import('./pages/timesheet/payroll/PayrollPage.tsx'))
 
 // Página de prueba del motor de aprobaciones: solo existe en desarrollo.
 const ApprovalsDemoPage = import.meta.env.DEV ? lazy(() => import('./pages/dev/ApprovalsDemoPage.tsx')) : null
@@ -33,6 +34,7 @@ function App() {
               <Route index element={<TimesheetPage />} />
               <Route path="semana" element={<WeekPage />} />
               <Route path="equipo" element={<TeamPage />} />
+              <Route path="nomina" element={<PayrollPage />} />
             </Route>
             <Route
               path="empleados"

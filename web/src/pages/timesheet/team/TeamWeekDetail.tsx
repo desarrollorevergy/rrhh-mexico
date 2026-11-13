@@ -19,8 +19,11 @@ import { WeekHistory } from './WeekHistory.tsx'
 interface Props {
   week: Detail
   /** Se llama con la semana ya actualizada tras aprobar o rechazar. */
-  onChange: (week: Detail) => void
+  onChange?: (week: Detail) => void
   onBack: () => void
+  /** Solo consulta (panel de RRHH): sin aprobar, rechazar, corregir ni historial. */
+  readOnly?: boolean
+  backLabel?: string
 }
 
 const TAG = 'rounded-full px-2 py-0.5 text-[11px] font-semibold'
@@ -41,7 +44,8 @@ function Kpi({ label, value, strong = false }: { label: string; value: string; s
 }
 
 // Revisión semanal de un colaborador: detalle día por día, aprobar o rechazar.
-export function TeamWeekDetail({ week, onChange, onBack }: Props) {
+// RRHH usa la misma pantalla en solo lectura.
+export function TeamWeekDetail({ week, onChange, onBack, readOnly = false, backLabel = 'Volver al consolidado' }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [rejecting, setRejecting] = useState(false)
@@ -51,13 +55,13 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
 
   const byDate = new Map(week.days.map((day) => [day.workDate, day]))
   const dates = Array.from({ length: 7 }, (_, index) => addDaysKey(week.weekStart, index))
-  const canDecide = week.days.length > 0 && week.status !== 'approved'
+  const canDecide = !readOnly && week.days.length > 0 && week.status !== 'approved'
 
   const run = async (action: () => Promise<Detail>) => {
     setSaving(true)
     setError(null)
     try {
-      onChange(await action())
+      onChange?.(await action())
       setRejecting(false)
       setCorrecting(null)
       setHistoryVersion((version) => version + 1)
@@ -75,7 +79,7 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
         onClick={onBack}
         className="mb-3 flex cursor-pointer items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
       >
-        <ArrowLeft size={16} aria-hidden="true" /> Volver al consolidado
+        <ArrowLeft size={16} aria-hidden="true" /> {backLabel}
       </button>
 
       <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
@@ -155,7 +159,7 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
               <th className="px-3 py-2 text-right font-semibold">Extra</th>
               <th className="px-3 py-2 text-right font-semibold">Total</th>
               <th className="px-3 py-2 font-semibold">Detalles</th>
-              <th className="px-3 py-2" aria-label="Acciones" />
+              {!readOnly && <th className="px-3 py-2" aria-label="Acciones" />}
             </tr>
           </thead>
           <tbody>
@@ -165,7 +169,7 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
                 return (
                   <tr key={date} className="border-b border-border text-faint last:border-0">
                     <td className="px-3 py-2 first-letter:uppercase">{dayLabel(date)}</td>
-                    <td colSpan={8} className="px-3 py-2">Sin registro</td>
+                    <td colSpan={readOnly ? 7 : 8} className="px-3 py-2">Sin registro</td>
                   </tr>
                 )
               }
@@ -198,6 +202,7 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
                     {day.rejectReason && <p className="mt-1 text-xs text-red-700">{day.rejectReason}</p>}
                     {day.comment && <p className="mt-1 text-xs text-muted">«{day.comment}»</p>}
                   </td>
+                  {!readOnly && (
                   <td className="px-2 py-1.5 text-right">
                     <button
                       type="button"
@@ -213,6 +218,7 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
                       <Pencil size={16} />
                     </button>
                   </td>
+                  )}
                 </tr>
               )
             })}
@@ -220,7 +226,7 @@ export function TeamWeekDetail({ week, onChange, onBack }: Props) {
         </table>
       </div>
 
-      <WeekHistory key={historyVersion} employeeId={week.employeeId} weekStart={week.weekStart} />
+      {!readOnly && <WeekHistory key={historyVersion} employeeId={week.employeeId} weekStart={week.weekStart} />}
 
       {correcting && (
         <CorrectEntryDialog

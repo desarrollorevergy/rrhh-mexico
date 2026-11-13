@@ -66,7 +66,16 @@ export function apiDelete<T>(path: string): Promise<T> {
   return apiRequest<T>('DELETE', path)
 }
 
+/** Envía datos y devuelve la respuesta como archivo (por ejemplo, el CSV de nómina). */
+export async function apiDownload(path: string, body: unknown): Promise<Blob> {
+  return (await send('POST', path, body)).blob()
+}
+
 async function apiRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+  return (await (await send(method, path, body)).json()) as T
+}
+
+async function send(method: string, path: string, body?: unknown): Promise<Response> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 
@@ -96,5 +105,5 @@ async function apiRequest<T>(method: string, path: string, body?: unknown): Prom
     }
     throw new ApiError(res.status, message)
   }
-  return (await res.json()) as T
+  return res
 }
