@@ -47,6 +47,44 @@ export interface AbsencePreview {
   problem: string | null
 }
 
+/** Una solicitud vista por quien la revisa (supervisor o RRHH). */
+export interface ReviewItem {
+  id: number
+  employeeId: number
+  employeeName: string
+  departmentName: string | null
+  type: AbsenceType
+  startDate: string
+  endDate: string
+  days: number
+  comment: string | null
+  status: AbsenceStatus
+  reason: string | null
+  createdAt: string
+  /** Le toca aprobar o rechazar ahora a quien consulta. */
+  canDecide: boolean
+  /** RRHH puede cancelar una solicitud ya aprobada. */
+  canCancelApproved: boolean
+}
+
+export interface BalanceAdjustment {
+  days: number
+  reason: string
+  byName: string
+  at: string
+}
+
+export interface EmployeeBalance {
+  employeeId: number
+  employeeNumber: string
+  employeeName: string
+  departmentName: string | null
+  hireDate: string | null
+  balance: VacationBalance | null
+  /** Ajustes de RRHH del año de servicio en curso. */
+  adjustments: BalanceAdjustment[]
+}
+
 export interface AbsenceInput {
   type: AbsenceType
   startDate: string
@@ -95,4 +133,13 @@ export const absencesApi = {
     apiPost<AbsencePreview>('/api/absences/preview', { ...input, timeZone: deviceTimeZone() }),
   create: (input: AbsenceInput) => apiPost<AbsenceRequest>('/api/absences', { ...input, timeZone: deviceTimeZone() }),
   cancel: (id: number) => apiPost<AbsenceRequest>(`/api/absences/${id}/cancel`),
+  // Revisión (supervisor y RRHH)
+  review: () => apiGet<ReviewItem[]>('/api/absences/review'),
+  approve: (id: number) => apiPost<ReviewItem>(`/api/absences/${id}/approve`),
+  reject: (id: number, reason: string) => apiPost<ReviewItem>(`/api/absences/${id}/reject`, { reason }),
+  // Solo RRHH
+  cancelApproved: (id: number, reason: string) => apiPost<ReviewItem>(`/api/absences/${id}/cancel-approved`, { reason }),
+  balances: () => apiGet<EmployeeBalance[]>(`/api/absences/balances?timeZone=${encodeURIComponent(deviceTimeZone())}`),
+  adjust: (employeeId: number, days: number, reason: string) =>
+    apiPost<{ ok: true }>(`/api/absences/balances/${employeeId}/adjust`, { days, reason, timeZone: deviceTimeZone() }),
 }

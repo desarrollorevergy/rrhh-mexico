@@ -260,6 +260,7 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 - **Qué días cuentan:** días laborables, de **lunes a sábado** sin festivos del calendario; no hay medios días.
 - **Interpretación aplicada, sin confirmar expresamente:** el año de servicio *n* da los días de la fila *n* de la tabla (año 2 → 14); cada día se descuenta del año de servicio en el que cae, así que una solicitud que cruza el aniversario se reparte entre los dos; quien ingresó un 29 de febrero cumple el 28 en años no bisiestos.
 - **Aplicado en la etapa 3, sin confirmar expresamente:** las vacaciones no se piden para fechas pasadas; la incapacidad cuenta **días naturales** (no laborables) y no toca el saldo; no se admiten dos solicitudes vivas del mismo tipo sobre el mismo día.
+- **Aplicado en las etapas 4 y 5, sin confirmar expresamente:** cancelar una solicitud aprobada y ajustar un saldo exigen **motivo**; el ajuste aplica solo al año de servicio en curso del empleado; el supervisor ve solo a su equipo directo, igual que en el Parte de Horas.
 - **Reserva:** los días de una solicitud pendiente quedan reservados y no se pueden volver a pedir.
 - **Cancelar:** el colaborador cancela sus solicitudes pendientes. Una ya aprobada solo la cancela **RRHH**, y devuelve el saldo.
 - **Fechas pasadas:** permitidas en la incapacidad.
@@ -271,8 +272,8 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 1. Datos — **hecha**: fecha de ingreso en la ficha (migración 008) y tablas `absence_requests`, `absence_days` y `vacation_adjustments` (migración 009).
 2. Cálculo de saldo — **hecha**: `api/src/absences/balance.ts` (funciones puras con pruebas).
 3. Colaborador — **hecha en código el 2026-11-16; falta verla en el navegador**: pantalla `/vacaciones` (`web/src/pages/absences/`) con saldo, nueva solicitud con vista previa de días, historial y cancelación. API en `api/src/absences/` (`/api/absences`: `mine`, `preview`, crear, `:id/cancel`). Tipo `absence_request` en el motor de aprobaciones.
-4. Supervisor: solicitudes de su equipo.
-5. RRHH: aprobación final, ver todas, ajustar saldos, cancelar aprobadas.
+4. Supervisor — **hecha en código el 2026-11-16; falta verla en el navegador**: `/vacaciones/solicitudes` con las solicitudes de su equipo directo, aprobar y rechazar con motivo.
+5. RRHH — **hecha en código el 2026-11-16; falta verla en el navegador**: la misma pantalla con todas las solicitudes, aprobación final y cancelación de aprobadas; `/vacaciones/saldos` con el saldo de cada empleado y el ajuste manual. Lógica en `api/src/absences/review.ts` (`/api/absences`: `review`, `:id/approve`, `:id/reject`, `:id/cancel-approved`, `balances`, `balances/:employeeId/adjust`).
 6. Incapacidad con documento IMSS (Azure Blob Storage).
 
 ## Dudas pendientes (no decidir sin confirmar)

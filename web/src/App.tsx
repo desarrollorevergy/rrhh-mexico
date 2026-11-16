@@ -6,6 +6,9 @@ import { HomePage } from './pages/HomePage.tsx'
 import { NotFoundPage } from './pages/NotFoundPage.tsx'
 
 // Las pantallas de cada módulo se descargan al entrar en ellas.
+const AbsencesLayout = lazy(() => import('./pages/absences/AbsencesLayout.tsx'))
+const AbsenceReviewPage = lazy(() => import('./pages/absences/ReviewPage.tsx'))
+const AbsenceBalancesPage = lazy(() => import('./pages/absences/BalancesPage.tsx'))
 const AbsencesPage = lazy(() => import('./pages/absences/AbsencesPage.tsx'))
 const AdminPage = lazy(() => import('./pages/admin/AdminPage.tsx'))
 const TimesheetLayout = lazy(() => import('./pages/timesheet/TimesheetLayout.tsx'))
@@ -41,10 +44,14 @@ function App() {
               path="vacaciones"
               element={
                 <Suspense fallback={null}>
-                  <AbsencesPage />
+                  <AbsencesLayout />
                 </Suspense>
               }
-            />
+            >
+              <Route index element={<AbsencesPage />} />
+              <Route path="solicitudes" element={<AbsenceReviewPage />} />
+              <Route path="saldos" element={<AbsenceBalancesPage />} />
+            </Route>
             <Route
               path="empleados"
               element={

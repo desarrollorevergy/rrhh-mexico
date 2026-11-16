@@ -74,7 +74,7 @@ export class AbsenceError extends Error {
   }
 }
 
-const MAX_COMMENT = 1000
+export const MAX_COMMENT = 1000
 /** Tope de una sola solicitud, para no generar rangos absurdos por un error al teclear. */
 const MAX_RANGE_DAYS = 366
 const DEFAULT_TIME_ZONE = 'America/Mexico_City'
@@ -138,7 +138,7 @@ function vacationProblem(check: VacationCheck): string | null {
     : PROBLEMS.insufficient
 }
 
-function statusOf(row: { approval_status: ApprovalStatus | null; steps: string | null; current_step: number | null; cancelled_at: Date | null }): AbsenceStatus {
+export function statusOf(row: { approval_status: ApprovalStatus | null; steps: string | null; current_step: number | null; cancelled_at: Date | null }): AbsenceStatus {
   if (row.cancelled_at) return 'cancelled'
   if (row.approval_status === 'approved' || row.approval_status === 'rejected' || row.approval_status === 'cancelled') {
     return row.approval_status
