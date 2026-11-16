@@ -99,7 +99,7 @@ export const MODULES: AppModule[] = [
     description: 'Solicitudes de ausencia con control de saldo de vacaciones.',
     icon: Calendar,
     path: '/vacaciones',
-    available: false,
+    available: true,
   },
   {
     num: '09',

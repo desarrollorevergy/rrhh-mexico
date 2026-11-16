@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import express, { type ErrorRequestHandler, type Express } from 'express'
+import { absencesRouter } from './absences/routes.js'
+import { createAbsenceService } from './absences/service.js'
 import { createAdminRepository } from './admin/repository.js'
 import { adminRouter } from './admin/routes.js'
 import { approvalsRouter } from './approvals/routes.js'
@@ -106,6 +108,7 @@ export function createApp(options: AppOptions = {}): Express {
         createTeamService({ db: config.db, approvals }),
       ),
     )
+    app.use('/api/absences', absencesRouter(config.db, createAbsenceService({ db: config.db, approvals })))
     app.use('/api/approvals', approvalsRouter(config, config.db, approvals))
   }
 

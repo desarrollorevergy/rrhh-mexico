@@ -6,6 +6,7 @@ import { HomePage } from './pages/HomePage.tsx'
 import { NotFoundPage } from './pages/NotFoundPage.tsx'
 
 // Las pantallas de cada módulo se descargan al entrar en ellas.
+const AbsencesPage = lazy(() => import('./pages/absences/AbsencesPage.tsx'))
 const AdminPage = lazy(() => import('./pages/admin/AdminPage.tsx'))
 const TimesheetLayout = lazy(() => import('./pages/timesheet/TimesheetLayout.tsx'))
 const TimesheetPage = lazy(() => import('./pages/timesheet/TimesheetPage.tsx'))
@@ -36,6 +37,14 @@ function App() {
               <Route path="equipo" element={<TeamPage />} />
               <Route path="nomina" element={<PayrollPage />} />
             </Route>
+            <Route
+              path="vacaciones"
+              element={
+                <Suspense fallback={null}>
+                  <AbsencesPage />
+                </Suspense>
+              }
+            />
             <Route
               path="empleados"
               element={

@@ -259,6 +259,7 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 - **Caducidad:** los días no usados caducan al llegar el aniversario; no se acumulan.
 - **Qué días cuentan:** días laborables, de **lunes a sábado** sin festivos del calendario; no hay medios días.
 - **Interpretación aplicada, sin confirmar expresamente:** el año de servicio *n* da los días de la fila *n* de la tabla (año 2 → 14); cada día se descuenta del año de servicio en el que cae, así que una solicitud que cruza el aniversario se reparte entre los dos; quien ingresó un 29 de febrero cumple el 28 en años no bisiestos.
+- **Aplicado en la etapa 3, sin confirmar expresamente:** las vacaciones no se piden para fechas pasadas; la incapacidad cuenta **días naturales** (no laborables) y no toca el saldo; no se admiten dos solicitudes vivas del mismo tipo sobre el mismo día.
 - **Reserva:** los días de una solicitud pendiente quedan reservados y no se pueden volver a pedir.
 - **Cancelar:** el colaborador cancela sus solicitudes pendientes. Una ya aprobada solo la cancela **RRHH**, y devuelve el saldo.
 - **Fechas pasadas:** permitidas en la incapacidad.
@@ -269,7 +270,7 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 
 1. Datos — **hecha**: fecha de ingreso en la ficha (migración 008) y tablas `absence_requests`, `absence_days` y `vacation_adjustments` (migración 009).
 2. Cálculo de saldo — **hecha**: `api/src/absences/balance.ts` (funciones puras con pruebas).
-3. Colaborador: saldo, crear solicitud, cancelar pendientes, historial.
+3. Colaborador — **hecha en código el 2026-11-16; falta verla en el navegador**: pantalla `/vacaciones` (`web/src/pages/absences/`) con saldo, nueva solicitud con vista previa de días, historial y cancelación. API en `api/src/absences/` (`/api/absences`: `mine`, `preview`, crear, `:id/cancel`). Tipo `absence_request` en el motor de aprobaciones.
 4. Supervisor: solicitudes de su equipo.
 5. RRHH: aprobación final, ver todas, ajustar saldos, cancelar aprobadas.
 6. Incapacidad con documento IMSS (Azure Blob Storage).
