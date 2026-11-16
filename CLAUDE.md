@@ -137,9 +137,21 @@ Los módulos 01, 02, 03 y 08 comparten el patrón "solicitud → uno o varios ap
 
 En `api/src/approvals/`; el detalle está en `api/src/approvals/CLAUDE.md`, que se carga al trabajar en esa carpeta.
 
-## Módulo 01 — Parte de Horas (Fase 1, en curso)
+## Módulo 01 — Parte de Horas (Fase 1, en pausa desde el 2026-11-16)
 
 Es el módulo que se presentará como terminado. Debe quedar **igual que la app desplegada pero adaptado** a esta arquitectura.
+
+### Dónde se quedó (2026-11-16)
+
+Por decisión del usuario se deja aquí para avanzar con los demás módulos. Etapas 1 a 8 hechas en código; para retomarlo, en este orden:
+
+1. **Etapa 9**, sin empezar: orden de trabajo adjunta (Azure Blob) y avisos push al rechazar.
+2. **Etapa 10**: cargar los empleados reales en producción (base de datos, migraciones y grupos de roles ya funcionan).
+3. Probar la PWA (etapa 8) en un teléfono real y con Easy Auth en producción; necesita la etapa 8 desplegada.
+4. Validar el formato del CSV de nómina con quien hace la nómina.
+5. Pantalla de mantenimiento de analíticas para Controlling.
+
+Al pausar, `main` (producción) llegaba hasta el rol Administrador: le faltaban la ficha automática y las etapas 7 y 8, que estaban solo en `dev`.
 
 ### Referencia existente
 
@@ -233,6 +245,34 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 | Supervisor | Ver consolidado de su equipo, detalle por día, aceptar / rechazar con motivo |
 | RRHH | Ver aprobados, detalle para nómina, reportes de horas y dietas |
 | Dirección | Sin acceso a este módulo |
+
+## Módulo 08 — Vacaciones / Ausentismos (en curso desde el 2026-11-16)
+
+### Reglas confirmadas (2026-11-16)
+
+- **Tipos:** por ahora solo **vacaciones** e **incapacidad**. Los demás tipos de ausencia se añadirán después.
+- **Flujo:** supervisor → RRHH para todos los tipos, también la incapacidad (pasa por los dos «para conocimiento»). El rechazo es definitivo (documento funcional).
+- **Sin supervisor:** la solicitud va directa a RRHH.
+- **Fecha de ingreso:** está en la ficha (`employees.hire_date`, migración 008); la captura RRHH. Sin ella no hay saldo.
+- **Saldo:** se calcula desde la fecha de ingreso con la tabla LFT 2023+ (12, 14, 16, 18, 20 y luego +2 cada cinco años); no hay carga de saldo inicial. RRHH puede ajustar saldos a mano.
+- **Año de servicio:** el año se cuenta por **aniversario de ingreso**, no por año natural. El año 1 va del ingreso al primer aniversario y sus 12 días están disponibles **completos desde el primer día** (no proporcionales).
+- **Caducidad:** los días no usados caducan al llegar el aniversario; no se acumulan.
+- **Qué días cuentan:** días laborables, de **lunes a sábado** sin festivos del calendario; no hay medios días.
+- **Interpretación aplicada, sin confirmar expresamente:** el año de servicio *n* da los días de la fila *n* de la tabla (año 2 → 14); cada día se descuenta del año de servicio en el que cae, así que una solicitud que cruza el aniversario se reparte entre los dos; quien ingresó un 29 de febrero cumple el 28 en años no bisiestos.
+- **Reserva:** los días de una solicitud pendiente quedan reservados y no se pueden volver a pedir.
+- **Cancelar:** el colaborador cancela sus solicitudes pendientes. Una ya aprobada solo la cancela **RRHH**, y devuelve el saldo.
+- **Fechas pasadas:** permitidas en la incapacidad.
+- **Incapacidad:** exige el documento del IMSS (necesita Azure Blob Storage, aún sin montar).
+- **Parte de Horas:** por ahora separados. Más adelante, unas vacaciones aprobadas impedirán fichar esos días y los cargarán solos con la etiqueta de vacaciones.
+
+### Etapas
+
+1. Datos — **hecha**: fecha de ingreso en la ficha (migración 008) y tablas `absence_requests`, `absence_days` y `vacation_adjustments` (migración 009).
+2. Cálculo de saldo — **hecha**: `api/src/absences/balance.ts` (funciones puras con pruebas).
+3. Colaborador: saldo, crear solicitud, cancelar pendientes, historial.
+4. Supervisor: solicitudes de su equipo.
+5. RRHH: aprobación final, ver todas, ajustar saldos, cancelar aprobadas.
+6. Incapacidad con documento IMSS (Azure Blob Storage).
 
 ## Dudas pendientes (no decidir sin confirmar)
 

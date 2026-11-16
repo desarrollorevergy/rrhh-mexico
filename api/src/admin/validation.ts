@@ -7,6 +7,8 @@ export interface EmployeeInput {
   fullName: string
   email: string
   jobTitle: string | null
+  /** Fecha de ingreso (AAAA-MM-DD). De ella sale la antigüedad para las vacaciones. */
+  hireDate: string | null
   departmentId: number | null
   supervisorId: number | null
   isActive: boolean
@@ -36,6 +38,7 @@ export function parseEmployee(body: unknown): Parsed<EmployeeInput> {
   const fullName = text(data.fullName)
   const email = text(data.email).toLowerCase()
   const jobTitle = text(data.jobTitle)
+  const hireDate = text(data.hireDate)
   const departmentId = optionalId(data.departmentId)
   const supervisorId = optionalId(data.supervisorId)
 
@@ -45,6 +48,7 @@ export function parseEmployee(body: unknown): Parsed<EmployeeInput> {
   if (!fullName || fullName.length > 200) return { ok: false, error: 'El nombre es obligatorio' }
   if (!EMAIL.test(email) || email.length > 254) return { ok: false, error: 'El correo no es válido' }
   if (jobTitle.length > 100) return { ok: false, error: 'El puesto es demasiado largo' }
+  if (hireDate && !isValidDate(hireDate)) return { ok: false, error: 'La fecha de ingreso no es válida' }
   if (departmentId === undefined) return { ok: false, error: 'El departamento no es válido' }
   if (supervisorId === undefined) return { ok: false, error: 'El supervisor no es válido' }
 
@@ -55,6 +59,7 @@ export function parseEmployee(body: unknown): Parsed<EmployeeInput> {
       fullName,
       email,
       jobTitle: jobTitle || null,
+      hireDate: hireDate || null,
       departmentId,
       supervisorId,
       // Un empleado está activo salvo que se indique lo contrario.

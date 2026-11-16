@@ -19,6 +19,7 @@ describe('parseEmployee', () => {
         fullName: 'Ana Ruiz',
         email: 'ana.ruiz@example.test',
         jobTitle: null,
+        hireDate: null,
         departmentId: null,
         supervisorId: null,
         isActive: true,
@@ -32,6 +33,7 @@ describe('parseEmployee', () => {
     ['correo inválido', { ...valid, email: 'no-es-correo' }],
     ['supervisor inválido', { ...valid, supervisorId: 'abc' }],
     ['departamento inválido', { ...valid, departmentId: -1 }],
+    ['fecha de ingreso que no existe', { ...valid, hireDate: '2026-02-30' }],
     ['cuerpo vacío', null],
   ])('rechaza: %s', (_caso, body) => {
     expect(parseEmployee(body).ok).toBe(false)
@@ -110,8 +112,14 @@ describe.skipIf(!db)('Administración por HTTP', () => {
     const department = await call('dev-rrhh', 'POST', '/departments', { name: `Operaciones ${tag}` })
     expect(department.status).toBe(200)
 
-    const boss = await call('dev-rrhh', 'POST', '/employees', employee('jefa', { jobTitle: 'Jefa de parque' }))
+    const boss = await call(
+      'dev-rrhh',
+      'POST',
+      '/employees',
+      employee('jefa', { jobTitle: 'Jefa de parque', hireDate: '2019-03-04' }),
+    )
     expect(boss.status).toBe(200)
+    expect(boss.body.hireDate).toBe('2019-03-04')
 
     const worker = await call(
       'dev-rrhh',

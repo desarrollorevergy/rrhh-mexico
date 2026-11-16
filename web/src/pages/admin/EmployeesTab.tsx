@@ -9,6 +9,7 @@ interface Employee {
   fullName: string
   email: string
   jobTitle: string | null
+  hireDate: string | null
   departmentId: number | null
   departmentName: string | null
   supervisorId: number | null
@@ -27,6 +28,7 @@ interface FormState {
   fullName: string
   email: string
   jobTitle: string
+  hireDate: string
   departmentId: string
   supervisorId: string
   isActive: boolean
@@ -38,6 +40,7 @@ const EMPTY_FORM: FormState = {
   fullName: '',
   email: '',
   jobTitle: '',
+  hireDate: '',
   departmentId: '',
   supervisorId: '',
   isActive: true,
@@ -50,6 +53,7 @@ function toForm(employee: Employee): FormState {
     fullName: employee.fullName,
     email: employee.email,
     jobTitle: employee.jobTitle ?? '',
+    hireDate: employee.hireDate ?? '',
     departmentId: employee.departmentId?.toString() ?? '',
     supervisorId: employee.supervisorId?.toString() ?? '',
     isActive: employee.isActive,
@@ -126,6 +130,7 @@ export function EmployeesTab() {
       fullName: form.fullName,
       email: form.email,
       jobTitle: form.jobTitle,
+      hireDate: form.hireDate || null,
       departmentId: form.departmentId ? Number(form.departmentId) : null,
       supervisorId: form.supervisorId ? Number(form.supervisorId) : null,
       isActive: form.isActive,
@@ -242,6 +247,11 @@ export function EmployeesTab() {
               <div className="min-[520px]:col-span-2">
                 <label className={LABEL} htmlFor="emp-email">Correo corporativo</label>
                 <input id="emp-email" type="email" required maxLength={254} className={INPUT} value={form.email} onChange={(event) => set('email', event.target.value)} />
+              </div>
+              <div className="min-[520px]:col-span-2">
+                <label className={LABEL} htmlFor="emp-hire-date">Fecha de ingreso</label>
+                <input id="emp-hire-date" type="date" className={INPUT} value={form.hireDate} onChange={(event) => set('hireDate', event.target.value)} />
+                <p className="mt-1 text-xs text-muted">Con ella se calcula la antigüedad para las vacaciones.</p>
               </div>
               <div>
                 <label className={LABEL} htmlFor="emp-department">Departamento</label>

@@ -9,6 +9,7 @@ export interface EmployeeRow {
   fullName: string
   email: string
   jobTitle: string | null
+  hireDate: string | null
   departmentId: number | null
   departmentName: string | null
   supervisorId: number | null
@@ -51,7 +52,7 @@ async function translating<T>(messages: { unique: string; foreignKey?: string },
 
 const EMPLOYEE_SELECT = `
   SELECT e.id, e.employee_number AS employeeNumber, e.full_name AS fullName, e.email,
-         e.job_title AS jobTitle, e.department_id AS departmentId, d.name AS departmentName,
+         e.job_title AS jobTitle, CONVERT(char(10), e.hire_date, 23) AS hireDate, e.department_id AS departmentId, d.name AS departmentName,
          e.supervisor_id AS supervisorId, s.full_name AS supervisorName, e.is_active AS isActive
   FROM employees AS e
   LEFT JOIN departments AS d ON d.id = e.department_id
@@ -63,6 +64,7 @@ function bindEmployee(request: sql.Request, input: EmployeeInput): sql.Request {
     .input('name', sql.NVarChar(200), input.fullName)
     .input('email', sql.NVarChar(254), input.email)
     .input('jobTitle', sql.NVarChar(100), input.jobTitle)
+    .input('hireDate', sql.Date, input.hireDate)
     .input('departmentId', sql.Int, input.departmentId)
     .input('supervisorId', sql.Int, input.supervisorId)
     .input('isActive', sql.Bit, input.isActive)
@@ -113,9 +115,9 @@ export function createAdminRepository(db: DbConfig) {
       const pool = await getPool(db)
       const id = await translating(EMPLOYEE_MESSAGES, async () => {
         const result = await bindEmployee(pool.request(), input).query<{ id: number }>(`
-          INSERT INTO employees (employee_number, full_name, email, job_title, department_id, supervisor_id, is_active)
+          INSERT INTO employees (employee_number, full_name, email, job_title, hire_date, department_id, supervisor_id, is_active)
           OUTPUT INSERTED.id
-          VALUES (@number, @name, @email, @jobTitle, @departmentId, @supervisorId, @isActive)`)
+          VALUES (@number, @name, @email, @jobTitle, @hireDate, @departmentId, @supervisorId, @isActive)`)
         return result.recordset[0]?.id
       })
       const created = id === undefined ? undefined : await getEmployee(id)
@@ -133,7 +135,7 @@ export function createAdminRepository(db: DbConfig) {
           .input('id', sql.Int, id)
           .query(`
             UPDATE employees
-            SET employee_number = @number, full_name = @name, email = @email, job_title = @jobTitle,
+            SET employee_number = @number, full_name = @name, email = @email, job_title = @jobTitle, hire_date = @hireDate,
                 department_id = @departmentId, supervisor_id = @supervisorId, is_active = @isActive
             WHERE id = @id`)
         return result.rowsAffected[0] ?? 0
