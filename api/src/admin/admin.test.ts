@@ -20,9 +20,54 @@ describe('parseEmployee', () => {
         email: 'ana.ruiz@example.test',
         jobTitle: null,
         hireDate: null,
+        imssEndDate: null,
         departmentId: null,
         supervisorId: null,
+        projectId: null,
         isActive: true,
+        rfc: null,
+        nss: null,
+        curp: null,
+        personalEmail: null,
+        personalPhone: null,
+        workPhone: null,
+        maritalStatus: null,
+        emergencyContactName: null,
+        emergencyContactPhone: null,
+        bloodType: null,
+        homeAddress: null,
+        sizePants: null,
+        sizeTshirt: null,
+        sizeShoes: null,
+        sizeJacket: null,
+        sizeShirt: null,
+        contractType: null,
+        contractStart: null,
+        contractEnd: null,
+        criminalRecordLetter: false,
+      },
+    })
+  })
+
+  it('normaliza RFC, CURP y NSS, y un contrato indefinido no guarda fecha de fin', () => {
+    const parsed = parseEmployee({
+      ...valid,
+      rfc: ' ruia-900215-ab1 ',
+      curp: 'ruia900215mdfzzn08',
+      nss: '1234 567 8901',
+      contractType: 'indefinido',
+      contractStart: '2024-01-08',
+      contractEnd: '2025-01-08',
+      criminalRecordLetter: true,
+    })
+    expect(parsed).toMatchObject({
+      ok: true,
+      value: {
+        rfc: 'RUIA900215AB1',
+        curp: 'RUIA900215MDFZZN08',
+        nss: '12345678901',
+        contractEnd: null,
+        criminalRecordLetter: true,
       },
     })
   })
@@ -34,6 +79,17 @@ describe('parseEmployee', () => {
     ['supervisor inválido', { ...valid, supervisorId: 'abc' }],
     ['departamento inválido', { ...valid, departmentId: -1 }],
     ['fecha de ingreso que no existe', { ...valid, hireDate: '2026-02-30' }],
+    ['RFC mal formado', { ...valid, rfc: 'ABC123' }],
+    ['CURP mal formada', { ...valid, curp: 'RUIA900215' }],
+    ['NSS que no son 11 dígitos', { ...valid, nss: '12345' }],
+    ['correo personal inválido', { ...valid, personalEmail: 'no-es-correo' }],
+    ['teléfono con letras', { ...valid, personalPhone: 'sin número' }],
+    ['estado civil desconocido', { ...valid, maritalStatus: 'otro' }],
+    ['tipo de sangre desconocido', { ...valid, bloodType: 'Z+' }],
+    ['tipo de contrato desconocido', { ...valid, contractType: 'eventual' }],
+    ['contrato que termina antes de empezar', { ...valid, contractType: 'proyecto', contractStart: '2026-05-01', contractEnd: '2026-04-01' }],
+    ['baja IMSS anterior al alta', { ...valid, hireDate: '2026-05-01', imssEndDate: '2026-04-01' }],
+    ['analítica inválida', { ...valid, projectId: 'x' }],
     ['cuerpo vacío', null],
   ])('rechaza: %s', (_caso, body) => {
     expect(parseEmployee(body).ok).toBe(false)
@@ -120,6 +176,44 @@ describe.skipIf(!db)('Administración por HTTP', () => {
     )
     expect(boss.status).toBe(200)
     expect(boss.body.hireDate).toBe('2019-03-04')
+
+    // Expediente completo: se guarda, se lee entero por id y la lista no trae datos sensibles.
+    const fileData = {
+      rfc: `RUIA900215${tag.slice(-3).toUpperCase()}`,
+      nss: String(Date.now()).slice(-11).padStart(11, '1'),
+      personalEmail: 'jefa.personal@example.test',
+      personalPhone: '+52 55 1234 5678',
+      maritalStatus: 'casado',
+      emergencyContactName: 'Contacto de Prueba',
+      emergencyContactPhone: '5512345678',
+      bloodType: 'O+',
+      homeAddress: 'Calle Falsa 123, Ciudad de México',
+      sizeShoes: '27',
+      contractType: 'proyecto',
+      contractStart: '2019-03-04',
+      contractEnd: '2027-03-03',
+      criminalRecordLetter: true,
+    }
+    const filed = await call('dev-rrhh', 'PUT', `/employees/${boss.body.id}`, {
+      ...employee('jefa', { jobTitle: 'Jefa de parque', hireDate: '2019-03-04' }),
+      ...fileData,
+    })
+    expect(filed.status).toBe(200)
+    expect(filed.body).toMatchObject(fileData)
+
+    const detail = await call('dev-rrhh', 'GET', `/employees/${boss.body.id}`)
+    expect(detail.body).toMatchObject({ ...fileData, fullName: `jefa ${tag}` })
+    expect((await call('dev-supervisor', 'GET', `/employees/${boss.body.id}`)).status).toBe(403)
+    expect((await call('dev-rrhh', 'GET', '/employees/999999999')).status).toBe(404)
+
+    const listed = (await call('dev-rrhh', 'GET', '/employees')).body.find((item: any) => item.id === boss.body.id)
+    expect(listed).toMatchObject({ fullName: `jefa ${tag}`, hireDate: '2019-03-04' })
+    expect(listed).not.toHaveProperty('rfc')
+    expect(listed).not.toHaveProperty('homeAddress')
+
+    // El RFC no se repite entre empleados.
+    const duplicate = await call('dev-rrhh', 'POST', '/employees', employee('copia', { rfc: fileData.rfc }))
+    expect(duplicate.status).toBe(409)
 
     const worker = await call(
       'dev-rrhh',

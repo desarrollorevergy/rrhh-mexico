@@ -55,6 +55,12 @@ export async function seed(config: DbConfig): Promise<void> {
         IF NOT EXISTS (SELECT 1 FROM employees WHERE email = @email)
           INSERT INTO employees (employee_number, full_name, email, department_id)
           SELECT @number, @name, @email, id FROM departments WHERE name = @department`)
+    // Fecha de ingreso de prueba. No pisa la que se haya cambiado a mano desde la app.
+    await pool
+      .request()
+      .input('email', sql.NVarChar(254), user.email)
+      .input('hireDate', sql.Date, user.hireDate)
+      .query('UPDATE employees SET hire_date = @hireDate WHERE email = @email AND hire_date IS NULL')
   }
 
   // La jerarquía sale de devUsers.ts (reportsTo).

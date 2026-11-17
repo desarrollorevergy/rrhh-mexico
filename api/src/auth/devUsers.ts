@@ -10,6 +10,8 @@ export interface DevUser {
   groupRoles: GroupRole[]
   /** ID del usuario de prueba que es su supervisor. */
   reportsTo?: string
+  /** Fecha de ingreso ficticia (AAAA-MM-DD): de ella sale su saldo de vacaciones. */
+  hireDate: string
 }
 
 export const DEV_USERS: DevUser[] = [
@@ -19,41 +21,55 @@ export const DEV_USERS: DevUser[] = [
     email: 'colaborador@example.test',
     groupRoles: [],
     reportsTo: 'dev-supervisor',
+    hireDate: '2025-02-03',
   },
   {
     id: 'dev-supervisor',
     name: 'Supervisor de Prueba',
     email: 'supervisor@example.test',
     groupRoles: [],
+    hireDate: '2019-03-04',
   },
-  { id: 'dev-rrhh', name: 'RRHH de Prueba', email: 'rrhh@example.test', groupRoles: ['rrhh'] },
+  { id: 'dev-rrhh', name: 'RRHH de Prueba', email: 'rrhh@example.test', groupRoles: ['rrhh'], hireDate: '2022-08-15' },
   {
     id: 'dev-direccion',
     name: 'Dirección de Prueba',
     email: 'direccion@example.test',
     groupRoles: ['direccion'],
+    hireDate: '2016-01-11',
   },
   {
     id: 'dev-controlling',
     name: 'Controlling de Prueba',
     email: 'controlling@example.test',
     groupRoles: ['controlling'],
+    hireDate: '2023-01-09',
   },
   {
     id: 'dev-almacen',
     name: 'Almacén de Prueba',
     email: 'almacen@example.test',
     groupRoles: ['almacen'],
+    hireDate: '2024-05-06',
   },
-  { id: 'dev-it', name: 'IT de Prueba', email: 'it@example.test', groupRoles: ['it'] },
+  { id: 'dev-it', name: 'IT de Prueba', email: 'it@example.test', groupRoles: ['it'], hireDate: '2023-09-18' },
   {
     id: 'dev-etica',
     name: 'Comité de Ética de Prueba',
     email: 'etica@example.test',
     groupRoles: ['etica'],
+    hireDate: '2020-10-05',
   },
   // Al final de la lista: el número de empleado de prueba sale de la posición.
-  { id: 'dev-admin', name: 'Administrador de Prueba', email: 'admin@example.test', groupRoles: ['admin'] },
+  // Con ficha completa (ingreso y supervisor) para poder probar todos los módulos entrando como administrador.
+  {
+    id: 'dev-admin',
+    name: 'Administrador de Prueba',
+    email: 'admin@example.test',
+    groupRoles: ['admin'],
+    reportsTo: 'dev-supervisor',
+    hireDate: '2021-06-01',
+  },
 ]
 
 export const DEFAULT_DEV_USER_ID = 'dev-colaborador'

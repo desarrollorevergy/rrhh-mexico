@@ -61,6 +61,7 @@ export function adminRouter(repository: AdminRepository): Router {
   router.post('/departments', rrhh, handle((req) => repository.createDepartment(valueOf(parseName(req.body, 100)))))
 
   router.get('/employees', rrhh, handle(() => repository.listEmployees()))
+  router.get('/employees/:id', rrhh, handle((req) => repository.getEmployee(idParam(req.params.id))))
   router.post('/employees', rrhh, handle((req) => repository.createEmployee(valueOf(parseEmployee(req.body)))))
   router.put(
     '/employees/:id',

@@ -60,8 +60,9 @@ GitHub Actions despliega en producción en cada push a `main`. El detalle (paque
 ### Base de datos
 
 - **Migraciones:** scripts numerados en `db/migrations/` (`001_base.sql`, ...). `api/src/db/migrate.ts` aplica los pendientes en orden, cada uno en una transacción, y los anota en la tabla `schema_migrations`. Un script ya aplicado **no se edita**: los cambios van en un script nuevo. No usar `GO`.
-- **Tablas actuales:** `departments`, `employees` (con `supervisor_id`), `projects` (analíticas) y `holidays`. Sin datos sensibles todavía.
-- **Datos de prueba:** `api/src/db/seed.ts` crea un empleado por cada usuario de prueba de `devUsers.ts`. No se ejecuta sin `DEV_AUTH=true`.
+- **Tablas actuales:** `departments`, `employees` (con `supervisor_id` y, desde la migración 010, el expediente completo con datos sensibles: RFC, NSS, CURP, domicilio, tipo de sangre), `projects` (analíticas), `holidays`, las del motor de aprobaciones, las del Parte de Horas y las de ausencias.
+- **Varias sentencias que dependen unas de otras en una migración:** SQL Server compila el script entero antes de ejecutarlo, así que un índice o un `UPDATE` sobre una columna añadida en el mismo script falla. Como no se puede usar `GO`, esas sentencias van dentro de `EXEC('...')` (ver `010_employee_file.sql`).
+- **Datos de prueba:** `api/src/db/seed.ts` crea un empleado por cada usuario de prueba de `devUsers.ts`, con fecha de ingreso ficticia. El administrador de prueba tiene ficha completa (ingreso y supervisor: «Supervisor de Prueba») para poder probar los módulos entrando como administrador. No se ejecuta sin `DEV_AUTH=true`.
 - **Enlace usuario ↔ empleado:** por **correo** (confirmado el 2026-11-13). La columna `entra_object_id` queda reservada, sin uso.
 - **Sin base de datos configurada** (`DB_SERVER` vacío, como hoy en Azure) la API arranca igual y nadie es Supervisor.
 - **Pruebas:** las de base de datos corren contra la base local y se omiten donde no hay `DB_SERVER` (GitHub Actions).
@@ -246,6 +247,37 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 | RRHH | Ver aprobados, detalle para nómina, reportes de horas y dietas |
 | Dirección | Sin acceso a este módulo |
 
+## Módulo 07 — Ficha de Empleado (en curso desde el 2026-11-16)
+
+Se rehízo antes de seguir con Bajas porque se relaciona con todos los demás módulos.
+
+### Campos (confirmados el 2026-11-16)
+
+Núm. de empleado, nombre, analítica, puesto, estatus, alta IMSS Revergy, baja IMSS, RFC, NSS, CURP, email personal y de empresa, teléfono personal y de empresa, estado civil, contacto de emergencia, tipo de sangre, domicilio, tallas (pantalón, playera, calzado, rompevientos y chamarra, camisa), contrato, carta de no antecedentes penales, departamento y supervisor.
+
+- **Alta IMSS Revergy** es la fecha de ingreso (`hire_date`): de ella sale la antigüedad para las vacaciones.
+- **Antigüedad SUTERM:** se eliminó; no se guarda.
+- **Estatus:** solo Activo / Baja (`is_active`).
+- **Analítica:** aquella con la que se contrató al empleado; una, del catálogo.
+- **Emergencia:** nombre y teléfono del contacto.
+- **Contrato:** indefinido o por proyecto; la duración va por fechas (inicio y fin; el indefinido no tiene fin).
+- **Carta de no antecedentes penales:** por ahora solo sí / no, sin el documento.
+- **Fotografía:** por ahora las iniciales del nombre; sin archivo.
+- **Quién ve qué:** RRHH edita todo. El colaborador ve la suya en solo lectura. El responsable (su equipo) y Dirección ven los datos laborales y de contacto, **no** los sensibles (RFC, NSS, CURP, domicilio, tipo de sangre): esos solo RRHH y el propio colaborador.
+- **Excel (aclarado el 2026-11-17):** no es importar sino **descargar** todos los datos de los empleados activos.
+- **Aplicado sin confirmar expresamente:** valores de estado civil (soltero, casado, unión libre, divorciado, viudo); RFC de persona física (13 caracteres); RFC, NSS y CURP no se repiten entre empleados; todo es opcional salvo número, nombre y correo de empresa; la baja IMSS no cambia sola el estatus.
+
+### Etapas
+
+1. Datos y API — **hecha**: migración 010; `GET /api/employees` devuelve el resumen sin datos sensibles y `GET /api/employees/:id` el expediente (solo RRHH). Validación en `api/src/admin/validation.ts`.
+2. Lista — **hecha en código**: `/empleados`, tabla con lo esencial; cada renglón abre el expediente.
+3. Expediente — **hecha en código**: `/empleados/:id`, por secciones, en solo lectura.
+4. Formulario — **hecha en código**: `/empleados/nuevo` y `/empleados/:id/editar`, en página completa.
+5. «Mi ficha» en solo lectura para el colaborador, y vista del equipo para el responsable y Dirección sin datos sensibles — pendiente.
+6. Descargar en Excel todos los datos de los empleados activos — pendiente.
+
+El usuario revisó las etapas 2 a 4 en el navegador y las dio por buenas el 2026-11-17.
+
 ## Módulo 08 — Vacaciones / Ausentismos (en curso desde el 2026-11-16)
 
 ### Reglas confirmadas (2026-11-16)
@@ -271,10 +303,12 @@ Implementa el cálculo como **funciones puras con pruebas Vitest**, separadas de
 
 1. Datos — **hecha**: fecha de ingreso en la ficha (migración 008) y tablas `absence_requests`, `absence_days` y `vacation_adjustments` (migración 009).
 2. Cálculo de saldo — **hecha**: `api/src/absences/balance.ts` (funciones puras con pruebas).
-3. Colaborador — **hecha en código el 2026-11-16; falta verla en el navegador**: pantalla `/vacaciones` (`web/src/pages/absences/`) con saldo, nueva solicitud con vista previa de días, historial y cancelación. API en `api/src/absences/` (`/api/absences`: `mine`, `preview`, crear, `:id/cancel`). Tipo `absence_request` en el motor de aprobaciones.
-4. Supervisor — **hecha en código el 2026-11-16; falta verla en el navegador**: `/vacaciones/solicitudes` con las solicitudes de su equipo directo, aprobar y rechazar con motivo.
-5. RRHH — **hecha en código el 2026-11-16; falta verla en el navegador**: la misma pantalla con todas las solicitudes, aprobación final y cancelación de aprobadas; `/vacaciones/saldos` con el saldo de cada empleado y el ajuste manual. Lógica en `api/src/absences/review.ts` (`/api/absences`: `review`, `:id/approve`, `:id/reject`, `:id/cancel-approved`, `balances`, `balances/:employeeId/adjust`).
-6. Incapacidad con documento IMSS (Azure Blob Storage).
+3. Colaborador — **hecha; el usuario probó el flujo de aprobaciones en local el 2026-11-16**: pantalla `/vacaciones` (`web/src/pages/absences/`) con saldo, nueva solicitud con vista previa de días, historial y cancelación. API en `api/src/absences/` (`/api/absences`: `mine`, `preview`, crear, `:id/cancel`). Tipo `absence_request` en el motor de aprobaciones.
+4. Supervisor — **hecha; el usuario probó el flujo de aprobaciones en local el 2026-11-16**: `/vacaciones/solicitudes` con las solicitudes de su equipo directo, aprobar y rechazar con motivo.
+5. RRHH — **hecha; el usuario probó el flujo de aprobaciones en local el 2026-11-16**: la misma pantalla con todas las solicitudes, aprobación final y cancelación de aprobadas; `/vacaciones/saldos` con el saldo de cada empleado y el ajuste manual. Lógica en `api/src/absences/review.ts` (`/api/absences`: `review`, `:id/approve`, `:id/reject`, `:id/cancel-approved`, `balances`, `balances/:employeeId/adjust`).
+6. Incapacidad con documento IMSS (Azure Blob Storage) — **pendiente por decisión del usuario (2026-11-16)**: por ahora no se adjuntan archivos.
+
+También quedan pendientes los avisos por correo (supervisor, RRHH y colaborador): solo existe el punto de enganche.
 
 ## Dudas pendientes (no decidir sin confirmar)
 

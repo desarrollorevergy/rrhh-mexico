@@ -30,9 +30,9 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 text-text min-[700px]:px-8">
+    <div className="mx-auto max-w-6xl px-4 py-6 text-text min-[700px]:px-8">
       <p className="text-[13px] font-bold text-accent">RECURSOS HUMANOS</p>
-      <h1 className="text-2xl font-bold">Empleados y festivos</h1>
+      <h1 className="text-2xl font-bold">Ficha de Empleado</h1>
 
       <div role="tablist" className="mt-4 flex gap-1 border-b border-border">
         {TABS.map((item) => (
