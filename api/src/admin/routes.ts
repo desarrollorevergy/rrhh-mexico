@@ -1,6 +1,7 @@
 import { Router, type Request, type RequestHandler, type Response } from 'express'
 import { getAuth, requireRole } from '../auth/middleware.js'
 import { fileAccess, isHrRole, listScope, withoutSensitive } from './access.js'
+import { buildEmployeesWorkbook } from './export.js'
 import { AdminError, type AdminRepository } from './repository.js'
 import { parseEmployee, parseHoliday, parseName, type Parsed } from './validation.js'
 
@@ -73,6 +74,18 @@ export function adminRouter(repository: AdminRepository): Router {
       return actorId === undefined ? [] : repository.listEmployees({ supervisorId: actorId })
     }),
   )
+
+  // Excel con todos los datos de los empleados activos. Solo RRHH: lleva datos sensibles.
+  // Va antes de /employees/:id.
+  router.get('/employees/export', rrhh, async (_req, res) => {
+    const file = await buildEmployeesWorkbook(await repository.listActiveFiles())
+    const today = new Date().toISOString().slice(0, 10)
+    res
+      .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .set('Content-Disposition', `attachment; filename="empleados_activos_${today}.xlsx"`)
+      .set('Cache-Control', 'no-store')
+      .send(file)
+  })
 
   // «Mi ficha»: la propia, completa y en solo lectura. Va antes de /employees/:id.
   router.get(

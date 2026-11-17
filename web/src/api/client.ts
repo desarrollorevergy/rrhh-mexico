@@ -74,9 +74,24 @@ export function apiDelete<T>(path: string): Promise<T> {
   return apiRequest<T>('DELETE', path)
 }
 
-/** Envía datos y devuelve la respuesta como archivo (por ejemplo, el CSV de nómina). */
-export async function apiDownload(path: string, body: unknown): Promise<Blob> {
-  return (await send('POST', path, body)).blob()
+/**
+ * Devuelve la respuesta como archivo (el CSV de nómina, el Excel de empleados).
+ * Con `body` la petición es POST; sin él, GET.
+ */
+export async function apiDownload(path: string, body?: unknown): Promise<Blob> {
+  return (await send(body === undefined ? 'GET' : 'POST', path, body)).blob()
+}
+
+/** Entrega el archivo al navegador como una descarga. */
+export function saveFile(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 async function apiRequest<T>(method: string, path: string, body?: unknown): Promise<T> {

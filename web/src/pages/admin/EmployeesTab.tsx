@@ -1,7 +1,8 @@
-import { ChevronRight, Plus } from 'lucide-react'
+import { ChevronRight, Download, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { BUTTON_PRIMARY, ERROR_BOX, INPUT, messageOf } from './ui.ts'
+import { saveFile } from '../../api/client.ts'
+import { BUTTON_PRIMARY, BUTTON_SECONDARY, ERROR_BOX, INPUT, messageOf } from './ui.ts'
 import { employeesApi, initialsOf, type EmployeeSummary } from './employees.ts'
 
 type StatusFilter = 'active' | 'inactive' | 'all'
@@ -39,6 +40,21 @@ export function EmployeesTab({ canCreate, teamOnly }: { canCreate: boolean; team
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<StatusFilter>('active')
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+
+  async function downloadExcel() {
+    setDownloading(true)
+    setDownloadError(null)
+    try {
+      const today = new Date().toLocaleDateString('en-CA')
+      saveFile(await employeesApi.exportActive(), `empleados_activos_${today}.xlsx`)
+    } catch (cause) {
+      setDownloadError(messageOf(cause))
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -98,11 +114,24 @@ export function EmployeesTab({ canCreate, teamOnly }: { canCreate: boolean; team
           </select>
         )}
         {canCreate && (
+          // Lleva datos sensibles: solo RRHH (la API también lo exige).
+          <button
+            type="button"
+            onClick={() => void downloadExcel()}
+            disabled={downloading}
+            className={`${BUTTON_SECONDARY} flex items-center gap-1.5`}
+          >
+            <Download size={16} aria-hidden="true" /> {downloading ? 'Generando…' : 'Descargar Excel'}
+          </button>
+        )}
+        {canCreate && (
           <Link to="/empleados/nuevo" className={`${BUTTON_PRIMARY} flex items-center gap-1.5`}>
             <Plus size={16} aria-hidden="true" /> Nuevo empleado
           </Link>
         )}
       </div>
+
+      {downloadError && <p className={`${ERROR_BOX} mt-3`}>{downloadError}</p>}
 
       <p className="mt-3 text-xs text-muted">
         {visible.length === 1 ? '1 empleado' : `${visible.length} empleados`}

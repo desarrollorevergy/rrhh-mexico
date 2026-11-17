@@ -1,5 +1,6 @@
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
+import ExcelJS from 'exceljs'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
 import { DEV_USER_HEADER } from '../auth/middleware.js'
@@ -8,6 +9,7 @@ import { closePool, getPool } from '../db/pool.js'
 import { testDb } from '../db/testSetup.js'
 import { isValidDate, parseEmployee, parseHoliday } from './validation.js'
 import { fileAccess, listScope, withoutSensitive } from './access.js'
+import { EXPORT_HEADERS } from './export.js'
 
 describe('quién ve qué de la ficha', () => {
   const member = { id: 7, supervisorId: 3, isActive: true }
@@ -317,6 +319,45 @@ describe.skipIf(!db)('Administración por HTTP', () => {
 
     expect((await call('dev-rrhh', 'PUT', '/employees/999999999', employee('nadie'))).status).toBe(404)
     expect((await call('dev-rrhh', 'PUT', '/employees/abc', employee('nadie'))).status).toBe(404)
+  })
+
+  it('Excel de empleados activos: solo RRHH, con todos los datos y sin las bajas', async () => {
+    const download = (devUser: string) =>
+      fetch(`${baseUrl}/api/employees/export`, { headers: { [DEV_USER_HEADER]: devUser } })
+
+    for (const user of ['dev-colaborador', 'dev-supervisor', 'dev-direccion']) {
+      expect((await download(user)).status).toBe(403)
+    }
+
+    const active = await call('dev-rrhh', 'POST', '/employees', employee('excel', { rfc: `EXCA800101${tag.slice(-3).toUpperCase()}`, hireDate: '2020-05-04' }))
+    const gone = await call('dev-rrhh', 'POST', '/employees', employee('exbaja', { isActive: false }))
+    expect(active.status).toBe(200)
+    expect(gone.status).toBe(200)
+
+    const res = await download('dev-rrhh')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('spreadsheetml')
+    expect(res.headers.get('content-disposition')).toMatch(/attachment; filename="empleados_activos_\d{4}-\d{2}-\d{2}\.xlsx"/)
+
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(await res.arrayBuffer())
+    const sheet = workbook.getWorksheet('Empleados activos')!
+    const headers = (sheet.getRow(1).values as unknown[]).slice(1)
+    expect(headers).toEqual(EXPORT_HEADERS)
+
+    const names: unknown[] = []
+    sheet.eachRow((row, number) => {
+      if (number > 1) names.push(row.getCell(2).value)
+    })
+    expect(names).toContain(`excel ${tag}`)
+    expect(names).not.toContain(`exbaja ${tag}`)
+
+    let found: ExcelJS.Row | undefined
+    sheet.eachRow((row) => {
+      if (row.getCell(2).value === `excel ${tag}`) found = row
+    })
+    expect(found!.getCell(headers.indexOf('RFC') + 1).value).toBe(active.body.rfc)
+    expect(found!.getCell(headers.indexOf('Alta IMSS Revergy') + 1).value).toEqual(new Date(Date.UTC(2020, 4, 4)))
   })
 
   it('festivos: todos los consultan, solo RRHH los cambia', async () => {

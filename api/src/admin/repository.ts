@@ -179,6 +179,13 @@ export function createAdminRepository(db: DbConfig) {
       return (await findEmployeeByEmail(db, email))?.id
     },
 
+    /** Expedientes completos de los empleados activos, para la descarga en Excel. */
+    async listActiveFiles(): Promise<EmployeeRow[]> {
+      const pool = await getPool(db)
+      const result = await pool.request().query<EmployeeRow>(`${EMPLOYEE_SELECT} WHERE e.is_active = 1 ORDER BY e.full_name`)
+      return result.recordset
+    },
+
     /** Expediente completo de un empleado. */
     async getEmployee(id: number): Promise<EmployeeRow> {
       const employee = await getEmployee(id)

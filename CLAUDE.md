@@ -265,7 +265,7 @@ Núm. de empleado, nombre, analítica, puesto, estatus, alta IMSS Revergy, baja 
 - **Fotografía:** por ahora las iniciales del nombre; sin archivo.
 - **Quién ve qué:** RRHH edita todo. El colaborador ve la suya en solo lectura. El responsable (su equipo) y Dirección ven los datos laborales y de contacto, **no** los sensibles (RFC, NSS, CURP, domicilio, tipo de sangre): esos solo RRHH y el propio colaborador. Implementado en `api/src/admin/access.ts`.
 - **Aplicado en la etapa 5, sin confirmar expresamente:** también se ocultan al responsable y a Dirección el **estado civil** y la **carta de no antecedentes**; las tallas sí las ven. El responsable ve solo a su equipo directo **activo**; Dirección ve a todos (activos y bajas).
-- **Excel (aclarado el 2026-11-17):** no es importar sino **descargar** todos los datos de los empleados activos.
+- **Excel (aclarado el 2026-11-17):** no es importar sino **descargar** todos los datos de los empleados activos. **Solo RRHH** lo descarga (confirmado el 2026-11-17), porque lleva datos sensibles. Se genera con la dependencia `exceljs` en la API (aprobada por el usuario).
 - **Aplicado sin confirmar expresamente:** valores de estado civil (soltero, casado, unión libre, divorciado, viudo); RFC de persona física (13 caracteres); RFC, NSS y CURP no se repiten entre empleados; todo es opcional salvo número, nombre y correo de empresa; la baja IMSS no cambia sola el estatus.
 
 ### Etapas
@@ -275,7 +275,7 @@ Núm. de empleado, nombre, analítica, puesto, estatus, alta IMSS Revergy, baja 
 3. Expediente — **hecha en código**: `/empleados/:id`, por secciones, en solo lectura.
 4. Formulario — **hecha en código**: `/empleados/nuevo` y `/empleados/:id/editar`, en página completa.
 5. «Mi ficha» y vistas por rol — **hecha en código el 2026-11-17**: pestañas en `/empleados` según el rol (`?vista=`): «Mi ficha» para todos (`GET /api/employees/me`), «Empleados» para RRHH y Dirección, «Mi equipo» para el responsable y «Festivos» para RRHH. `GET /api/employees/:id` devuelve `access: 'full' | 'limited'` y, si es limitado, sin las claves sensibles. Falta verla en el navegador.
-6. Descargar en Excel todos los datos de los empleados activos — pendiente.
+6. Descargar en Excel todos los datos de los empleados activos — **hecha en código el 2026-11-17**: botón «Descargar Excel» en la pestaña Empleados (solo RRHH); `GET /api/employees/export` (`api/src/admin/export.ts`): hoja «Empleados activos», un renglón por empleado, todas las columnas del expediente con encabezado fijo, filtros y fechas como fecha. Falta probarla en el navegador.
 
 El usuario revisó las etapas 2 a 4 en el navegador y las dio por buenas el 2026-11-17.
 

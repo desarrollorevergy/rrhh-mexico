@@ -15,6 +15,7 @@
     "db:import-legacy": "tsx --env-file-if-exists=.env src/db/importLegacy.ts"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "express": "^5.3.0",
     "mssql": "^12.7.14"
   },

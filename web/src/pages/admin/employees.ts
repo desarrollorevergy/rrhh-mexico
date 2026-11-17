@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut } from '../../api/client.ts'
+import { apiDownload, apiGet, apiPost, apiPut } from '../../api/client.ts'
 
 // Tipos, etiquetas y llamadas de la Ficha de Empleado (lista, expediente y formulario).
 
@@ -112,6 +112,8 @@ export const employeesApi = {
   list: () => apiGet<EmployeeSummary[]>('/api/employees'),
   get: (id: number) => apiGet<EmployeeFile>(`/api/employees/${id}`),
   mine: () => apiGet<EmployeeFile>('/api/employees/me'),
+  /** Excel con todos los datos de los empleados activos. Solo RRHH. */
+  exportActive: () => apiDownload('/api/employees/export'),
   create: (body: unknown) => apiPost<EmployeeFile>('/api/employees', body),
   update: (id: number, body: unknown) => apiPut<EmployeeFile>(`/api/employees/${id}`, body),
   departments: () => apiGet<Department[]>('/api/departments'),
