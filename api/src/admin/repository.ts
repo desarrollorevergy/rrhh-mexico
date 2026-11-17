@@ -1,5 +1,6 @@
 import sql from 'mssql'
 import type { DbConfig } from '../config/env.js'
+import { findEmployeeByEmail } from '../db/employees.js'
 import { getPool } from '../db/pool.js'
 import type { EmployeeInput, HolidayInput } from './validation.js'
 
@@ -21,7 +22,7 @@ export interface EmployeeSummary {
   isActive: boolean
 }
 
-/** Expediente completo, con los datos sensibles. Solo para RRHH. */
+/** Expediente completo, con los datos sensibles. Lo filtra `access.ts` según quién consulta. */
 export interface EmployeeRow extends EmployeeSummary, Omit<EmployeeInput, keyof EmployeeSummary> {}
 
 /** Error de datos que la pantalla debe mostrar tal cual (duplicado, referencia inválida...). */
@@ -155,13 +156,27 @@ export function createAdminRepository(db: DbConfig) {
   }
 
   return {
-    /** Lista para la tabla: solo lo esencial, sin datos sensibles. */
-    async listEmployees(): Promise<EmployeeSummary[]> {
+    /**
+     * Lista para la tabla: solo lo esencial, sin datos sensibles. Con `supervisorId`,
+     * solo su equipo directo activo.
+     */
+    async listEmployees(filter: { supervisorId?: number } = {}): Promise<EmployeeSummary[]> {
       const pool = await getPool(db)
-      const result = await pool
-        .request()
-        .query<EmployeeSummary>(`SELECT ${SUMMARY_COLUMNS} ${EMPLOYEE_JOINS} ORDER BY e.full_name`)
+      const request = pool.request()
+      let where = ''
+      if (filter.supervisorId !== undefined) {
+        request.input('supervisorId', sql.Int, filter.supervisorId)
+        where = 'WHERE e.supervisor_id = @supervisorId AND e.is_active = 1'
+      }
+      const result = await request.query<EmployeeSummary>(
+        `SELECT ${SUMMARY_COLUMNS} ${EMPLOYEE_JOINS} ${where} ORDER BY e.full_name`,
+      )
       return result.recordset
+    },
+
+    /** Ficha activa del usuario que consulta, enlazada por el correo; no la crea si no existe. */
+    async employeeIdByEmail(email: string): Promise<number | undefined> {
+      return (await findEmployeeByEmail(db, email))?.id
     },
 
     /** Expediente completo de un empleado. */

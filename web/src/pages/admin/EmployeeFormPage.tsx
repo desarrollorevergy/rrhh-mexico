@@ -35,9 +35,9 @@ function emptyForm(): FormState {
 
 function toForm(employee: EmployeeFile): FormState {
   const text = Object.fromEntries(
-    TEXT_FIELDS.map((field) => [field, employee[field] === null ? '' : String(employee[field])]),
+    TEXT_FIELDS.map((field) => [field, employee[field] == null ? '' : String(employee[field])]),
   ) as Record<TextField, string>
-  return { ...text, isActive: employee.isActive, criminalRecordLetter: employee.criminalRecordLetter }
+  return { ...text, isActive: employee.isActive, criminalRecordLetter: employee.criminalRecordLetter ?? false }
 }
 
 function toBody(form: FormState): Record<string, unknown> {

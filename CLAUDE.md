@@ -178,7 +178,7 @@ Al pausar, `main` (producción) llegaba hasta el rol Administrador: le faltaban 
 
 ### Etapas
 
-1. Datos y catálogos — **hecha**: catálogo de 68 analíticas, administración de empleados y festivos para RRHH (`/empleados`, tarjeta 07 visible solo para RRHH; API en `api/src/admin/`).
+1. Datos y catálogos — **hecha**: catálogo de 68 analíticas, administración de empleados y festivos para RRHH (`/empleados`; API en `api/src/admin/`). Desde la etapa 5 de la Ficha de Empleado la tarjeta 07 la ven todos.
    Pendiente de esta etapa: pantalla de mantenimiento de analíticas para Controlling.
 2. Cálculo de horas — **hecha**: `api/src/timesheet/hours.ts` (funciones puras, en minutos completos; `calculateWeek` da el consolidado).
 3. Fichaje con conexión — **hecha**.
@@ -263,7 +263,8 @@ Núm. de empleado, nombre, analítica, puesto, estatus, alta IMSS Revergy, baja 
 - **Contrato:** indefinido o por proyecto; la duración va por fechas (inicio y fin; el indefinido no tiene fin).
 - **Carta de no antecedentes penales:** por ahora solo sí / no, sin el documento.
 - **Fotografía:** por ahora las iniciales del nombre; sin archivo.
-- **Quién ve qué:** RRHH edita todo. El colaborador ve la suya en solo lectura. El responsable (su equipo) y Dirección ven los datos laborales y de contacto, **no** los sensibles (RFC, NSS, CURP, domicilio, tipo de sangre): esos solo RRHH y el propio colaborador.
+- **Quién ve qué:** RRHH edita todo. El colaborador ve la suya en solo lectura. El responsable (su equipo) y Dirección ven los datos laborales y de contacto, **no** los sensibles (RFC, NSS, CURP, domicilio, tipo de sangre): esos solo RRHH y el propio colaborador. Implementado en `api/src/admin/access.ts`.
+- **Aplicado en la etapa 5, sin confirmar expresamente:** también se ocultan al responsable y a Dirección el **estado civil** y la **carta de no antecedentes**; las tallas sí las ven. El responsable ve solo a su equipo directo **activo**; Dirección ve a todos (activos y bajas).
 - **Excel (aclarado el 2026-11-17):** no es importar sino **descargar** todos los datos de los empleados activos.
 - **Aplicado sin confirmar expresamente:** valores de estado civil (soltero, casado, unión libre, divorciado, viudo); RFC de persona física (13 caracteres); RFC, NSS y CURP no se repiten entre empleados; todo es opcional salvo número, nombre y correo de empresa; la baja IMSS no cambia sola el estatus.
 
@@ -273,7 +274,7 @@ Núm. de empleado, nombre, analítica, puesto, estatus, alta IMSS Revergy, baja 
 2. Lista — **hecha en código**: `/empleados`, tabla con lo esencial; cada renglón abre el expediente.
 3. Expediente — **hecha en código**: `/empleados/:id`, por secciones, en solo lectura.
 4. Formulario — **hecha en código**: `/empleados/nuevo` y `/empleados/:id/editar`, en página completa.
-5. «Mi ficha» en solo lectura para el colaborador, y vista del equipo para el responsable y Dirección sin datos sensibles — pendiente.
+5. «Mi ficha» y vistas por rol — **hecha en código el 2026-11-17**: pestañas en `/empleados` según el rol (`?vista=`): «Mi ficha» para todos (`GET /api/employees/me`), «Empleados» para RRHH y Dirección, «Mi equipo» para el responsable y «Festivos» para RRHH. `GET /api/employees/:id` devuelve `access: 'full' | 'limited'` y, si es limitado, sin las claves sensibles. Falta verla en el navegador.
 6. Descargar en Excel todos los datos de los empleados activos — pendiente.
 
 El usuario revisó las etapas 2 a 4 en el navegador y las dio por buenas el 2026-11-17.

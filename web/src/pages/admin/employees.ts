@@ -21,20 +21,24 @@ export interface EmployeeSummary {
   isActive: boolean
 }
 
-/** Expediente completo. */
+/**
+ * Expediente. Con `access: 'limited'` (responsable y Dirección) la API no envía los datos
+ * sensibles: RFC, NSS, CURP, domicilio, tipo de sangre, estado civil y carta de antecedentes.
+ */
 export interface EmployeeFile extends EmployeeSummary {
+  access: 'full' | 'limited'
   imssEndDate: string | null
-  rfc: string | null
-  nss: string | null
-  curp: string | null
+  rfc?: string | null
+  nss?: string | null
+  curp?: string | null
   personalEmail: string | null
   personalPhone: string | null
   workPhone: string | null
-  maritalStatus: string | null
+  maritalStatus?: string | null
   emergencyContactName: string | null
   emergencyContactPhone: string | null
-  bloodType: string | null
-  homeAddress: string | null
+  bloodType?: string | null
+  homeAddress?: string | null
   sizePants: string | null
   sizeTshirt: string | null
   sizeShoes: string | null
@@ -43,7 +47,7 @@ export interface EmployeeFile extends EmployeeSummary {
   contractType: string | null
   contractStart: string | null
   contractEnd: string | null
-  criminalRecordLetter: boolean
+  criminalRecordLetter?: boolean
 }
 
 export interface Department {
@@ -107,6 +111,7 @@ export function seniorityLabel(hireDate: string, today = new Date()): string {
 export const employeesApi = {
   list: () => apiGet<EmployeeSummary[]>('/api/employees'),
   get: (id: number) => apiGet<EmployeeFile>(`/api/employees/${id}`),
+  mine: () => apiGet<EmployeeFile>('/api/employees/me'),
   create: (body: unknown) => apiPost<EmployeeFile>('/api/employees', body),
   update: (id: number, body: unknown) => apiPut<EmployeeFile>(`/api/employees/${id}`, body),
   departments: () => apiGet<Department[]>('/api/departments'),

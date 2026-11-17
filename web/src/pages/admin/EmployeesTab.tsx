@@ -32,7 +32,8 @@ export function Avatar({ name, size = 'size-9 text-xs' }: { name: string; size?:
 }
 
 // Vista global de empleados: pocos datos, los más importantes. Cada renglón abre el expediente.
-export function EmployeesTab() {
+// `canCreate`: solo RRHH da de alta. `teamOnly`: el responsable ve solo su equipo directo activo.
+export function EmployeesTab({ canCreate, teamOnly }: { canCreate: boolean; teamOnly: boolean }) {
   const navigate = useNavigate()
   const [employees, setEmployees] = useState<EmployeeSummary[] | null>(null)
   const [search, setSearch] = useState('')
@@ -89,14 +90,18 @@ export function EmployeesTab() {
           aria-label="Buscar empleado"
           className={`${INPUT} min-w-0 flex-1`}
         />
-        <select aria-label="Filtrar por estatus" className={`${INPUT} w-auto`} value={status} onChange={(event) => setStatus(event.target.value as StatusFilter)}>
-          <option value="active">Activos</option>
-          <option value="inactive">Bajas</option>
-          <option value="all">Todos</option>
-        </select>
-        <Link to="/empleados/nuevo" className={`${BUTTON_PRIMARY} flex items-center gap-1.5`}>
-          <Plus size={16} aria-hidden="true" /> Nuevo empleado
-        </Link>
+        {!teamOnly && (
+          <select aria-label="Filtrar por estatus" className={`${INPUT} w-auto`} value={status} onChange={(event) => setStatus(event.target.value as StatusFilter)}>
+            <option value="active">Activos</option>
+            <option value="inactive">Bajas</option>
+            <option value="all">Todos</option>
+          </select>
+        )}
+        {canCreate && (
+          <Link to="/empleados/nuevo" className={`${BUTTON_PRIMARY} flex items-center gap-1.5`}>
+            <Plus size={16} aria-hidden="true" /> Nuevo empleado
+          </Link>
+        )}
       </div>
 
       <p className="mt-3 text-xs text-muted">
@@ -163,7 +168,7 @@ export function EmployeesTab() {
             {visible.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-muted">
-                  Sin empleados con este filtro.
+                  {teamOnly && employees.length === 0 ? 'No tienes personas a tu cargo.' : 'Sin empleados con este filtro.'}
                 </td>
               </tr>
             )}

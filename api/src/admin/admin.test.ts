@@ -7,6 +7,37 @@ import { loadConfig } from '../config/env.js'
 import { closePool, getPool } from '../db/pool.js'
 import { testDb } from '../db/testSetup.js'
 import { isValidDate, parseEmployee, parseHoliday } from './validation.js'
+import { fileAccess, listScope, withoutSensitive } from './access.js'
+
+describe('quién ve qué de la ficha', () => {
+  const member = { id: 7, supervisorId: 3, isActive: true }
+
+  it('RRHH y el administrador, todo; cada uno, la suya completa', () => {
+    expect(fileAccess(['colaborador', 'rrhh'], undefined, member)).toBe('full')
+    expect(fileAccess(['colaborador', 'admin'], undefined, member)).toBe('full')
+    expect(fileAccess(['colaborador'], 7, member)).toBe('full')
+    expect(fileAccess(['colaborador'], 8, member)).toBeNull()
+  })
+
+  it('el responsable, solo su equipo directo activo; Dirección, a todos; ambos sin datos sensibles', () => {
+    expect(fileAccess(['colaborador', 'supervisor'], 3, member)).toBe('limited')
+    expect(fileAccess(['colaborador', 'supervisor'], 4, member)).toBeNull()
+    expect(fileAccess(['colaborador', 'supervisor'], 3, { ...member, isActive: false })).toBeNull()
+    expect(fileAccess(['colaborador', 'direccion'], 4, member)).toBe('limited')
+  })
+
+  it('la lista: todos para RRHH y Dirección, el equipo para el responsable', () => {
+    expect(listScope(['colaborador', 'rrhh'])).toBe('all')
+    expect(listScope(['colaborador', 'direccion'])).toBe('all')
+    expect(listScope(['colaborador', 'supervisor'])).toBe('team')
+    expect(listScope(['colaborador'])).toBeNull()
+  })
+
+  it('quita los datos sensibles sin dejar las claves', () => {
+    const limited = withoutSensitive({ fullName: 'Ana', rfc: 'X', nss: null, homeAddress: 'Y', bloodType: 'O+' })
+    expect(limited).toEqual({ fullName: 'Ana' })
+  })
+})
 
 describe('parseEmployee', () => {
   const valid = { employeeNumber: ' 1042 ', fullName: ' Ana Ruiz ', email: ' Ana.Ruiz@Example.test ' }
@@ -155,13 +186,55 @@ describe.skipIf(!db)('Administración por HTTP', () => {
     expect(body.find((project: any) => project.code === 'MX0011000')?.name).toBe('GERENCIA')
   })
 
-  it('solo RRHH accede a empleados y departamentos', async () => {
+  it('solo RRHH da de alta y ve departamentos; la lista depende del rol', async () => {
     for (const user of ['dev-colaborador', 'dev-supervisor', 'dev-direccion']) {
-      expect((await call(user, 'GET', '/employees')).status).toBe(403)
       expect((await call(user, 'POST', '/employees', employee('intruso'))).status).toBe(403)
       expect((await call(user, 'GET', '/departments')).status).toBe(403)
     }
+    expect((await call('dev-colaborador', 'GET', '/employees')).status).toBe(403)
     expect((await call('dev-rrhh', 'GET', '/employees')).status).toBe(200)
+    expect((await call('dev-direccion', 'GET', '/employees')).status).toBe(200)
+  })
+
+  it('Mi ficha, el equipo del responsable y Dirección sin datos sensibles', async () => {
+    // Fichas de los usuarios de prueba (las crea el módulo de vacaciones si no existen).
+    await call('dev-supervisor', 'GET', '/absences/mine')
+    await call('dev-colaborador', 'GET', '/absences/mine')
+    const boss = await call('dev-supervisor', 'GET', '/employees/me')
+    expect(boss.status).toBe(200)
+    expect(boss.body.access).toBe('full')
+
+    const sensitive = { rfc: `GOMA850101${tag.slice(-3).toUpperCase()}`, homeAddress: 'Calle de Prueba 1', bloodType: 'A+' }
+    const member = await call('dev-rrhh', 'POST', '/employees', employee('equipo', { supervisorId: boss.body.id, ...sensitive }))
+    const outsider = await call('dev-rrhh', 'POST', '/employees', employee('ajeno'))
+    expect(member.status).toBe(200)
+
+    // El responsable ve a su equipo directo activo, sin datos sensibles; a los demás, no.
+    const team = (await call('dev-supervisor', 'GET', '/employees')).body
+    expect(team.some((item: any) => item.id === member.body.id)).toBe(true)
+    expect(team.some((item: any) => item.id === outsider.body.id)).toBe(false)
+    const limited = await call('dev-supervisor', 'GET', `/employees/${member.body.id}`)
+    expect(limited.status).toBe(200)
+    expect(limited.body).toMatchObject({ access: 'limited', fullName: `equipo ${tag}` })
+    for (const key of ['rfc', 'nss', 'curp', 'homeAddress', 'bloodType', 'maritalStatus', 'criminalRecordLetter']) {
+      expect(limited.body).not.toHaveProperty(key)
+    }
+    expect((await call('dev-supervisor', 'GET', `/employees/${outsider.body.id}`)).status).toBe(403)
+
+    // Dirección ve a todos, sin datos sensibles.
+    const direction = await call('dev-direccion', 'GET', `/employees/${member.body.id}`)
+    expect(direction.body.access).toBe('limited')
+    expect(direction.body).not.toHaveProperty('rfc')
+
+    // El colaborador solo ve su propia ficha, completa.
+    const mine = await call('dev-colaborador', 'GET', '/employees/me')
+    expect(mine.body).toMatchObject({ access: 'full', email: 'colaborador@example.test' })
+    expect(mine.body).toHaveProperty('rfc')
+    expect((await call('dev-colaborador', 'GET', `/employees/${mine.body.id}`)).body.access).toBe('full')
+    expect((await call('dev-colaborador', 'GET', `/employees/${member.body.id}`)).status).toBe(403)
+
+    // RRHH, todo.
+    expect((await call('dev-rrhh', 'GET', `/employees/${member.body.id}`)).body).toMatchObject({ access: 'full', ...sensitive })
   })
 
   it('RRHH da de alta, edita y asigna supervisor', async () => {
