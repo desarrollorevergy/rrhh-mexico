@@ -1,5 +1,6 @@
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
+import ExcelJS from 'exceljs'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
 import { DEV_USER_HEADER } from '../auth/middleware.js'
@@ -7,6 +8,38 @@ import { loadConfig } from '../config/env.js'
 import { closePool, getPool } from '../db/pool.js'
 import { testDb } from '../db/testSetup.js'
 import { isValidDate, parseEmployee, parseHoliday } from './validation.js'
+import { fileAccess, listScope, withoutSensitive } from './access.js'
+import { EXPORT_HEADERS } from './export.js'
+
+describe('quién ve qué de la ficha', () => {
+  const member = { id: 7, supervisorId: 3, isActive: true }
+
+  it('RRHH y el administrador, todo; cada uno, la suya completa', () => {
+    expect(fileAccess(['colaborador', 'rrhh'], undefined, member)).toBe('full')
+    expect(fileAccess(['colaborador', 'admin'], undefined, member)).toBe('full')
+    expect(fileAccess(['colaborador'], 7, member)).toBe('full')
+    expect(fileAccess(['colaborador'], 8, member)).toBeNull()
+  })
+
+  it('el responsable, solo su equipo directo activo; Dirección, a todos; ambos sin datos sensibles', () => {
+    expect(fileAccess(['colaborador', 'supervisor'], 3, member)).toBe('limited')
+    expect(fileAccess(['colaborador', 'supervisor'], 4, member)).toBeNull()
+    expect(fileAccess(['colaborador', 'supervisor'], 3, { ...member, isActive: false })).toBeNull()
+    expect(fileAccess(['colaborador', 'direccion'], 4, member)).toBe('limited')
+  })
+
+  it('la lista: todos para RRHH y Dirección, el equipo para el responsable', () => {
+    expect(listScope(['colaborador', 'rrhh'])).toBe('all')
+    expect(listScope(['colaborador', 'direccion'])).toBe('all')
+    expect(listScope(['colaborador', 'supervisor'])).toBe('team')
+    expect(listScope(['colaborador'])).toBeNull()
+  })
+
+  it('quita los datos sensibles sin dejar las claves', () => {
+    const limited = withoutSensitive({ fullName: 'Ana', rfc: 'X', nss: null, homeAddress: 'Y', bloodType: 'O+' })
+    expect(limited).toEqual({ fullName: 'Ana' })
+  })
+})
 
 describe('parseEmployee', () => {
   const valid = { employeeNumber: ' 1042 ', fullName: ' Ana Ruiz ', email: ' Ana.Ruiz@Example.test ' }
@@ -19,9 +52,55 @@ describe('parseEmployee', () => {
         fullName: 'Ana Ruiz',
         email: 'ana.ruiz@example.test',
         jobTitle: null,
+        hireDate: null,
+        imssEndDate: null,
         departmentId: null,
         supervisorId: null,
+        projectId: null,
         isActive: true,
+        rfc: null,
+        nss: null,
+        curp: null,
+        personalEmail: null,
+        personalPhone: null,
+        workPhone: null,
+        maritalStatus: null,
+        emergencyContactName: null,
+        emergencyContactPhone: null,
+        bloodType: null,
+        homeAddress: null,
+        sizePants: null,
+        sizeTshirt: null,
+        sizeShoes: null,
+        sizeJacket: null,
+        sizeShirt: null,
+        contractType: null,
+        contractStart: null,
+        contractEnd: null,
+        criminalRecordLetter: false,
+      },
+    })
+  })
+
+  it('normaliza RFC, CURP y NSS, y un contrato indefinido no guarda fecha de fin', () => {
+    const parsed = parseEmployee({
+      ...valid,
+      rfc: ' ruia-900215-ab1 ',
+      curp: 'ruia900215mdfzzn08',
+      nss: '1234 567 8901',
+      contractType: 'indefinido',
+      contractStart: '2024-01-08',
+      contractEnd: '2025-01-08',
+      criminalRecordLetter: true,
+    })
+    expect(parsed).toMatchObject({
+      ok: true,
+      value: {
+        rfc: 'RUIA900215AB1',
+        curp: 'RUIA900215MDFZZN08',
+        nss: '12345678901',
+        contractEnd: null,
+        criminalRecordLetter: true,
       },
     })
   })
@@ -32,6 +111,18 @@ describe('parseEmployee', () => {
     ['correo inválido', { ...valid, email: 'no-es-correo' }],
     ['supervisor inválido', { ...valid, supervisorId: 'abc' }],
     ['departamento inválido', { ...valid, departmentId: -1 }],
+    ['fecha de ingreso que no existe', { ...valid, hireDate: '2026-02-30' }],
+    ['RFC mal formado', { ...valid, rfc: 'ABC123' }],
+    ['CURP mal formada', { ...valid, curp: 'RUIA900215' }],
+    ['NSS que no son 11 dígitos', { ...valid, nss: '12345' }],
+    ['correo personal inválido', { ...valid, personalEmail: 'no-es-correo' }],
+    ['teléfono con letras', { ...valid, personalPhone: 'sin número' }],
+    ['estado civil desconocido', { ...valid, maritalStatus: 'otro' }],
+    ['tipo de sangre desconocido', { ...valid, bloodType: 'Z+' }],
+    ['tipo de contrato desconocido', { ...valid, contractType: 'eventual' }],
+    ['contrato que termina antes de empezar', { ...valid, contractType: 'proyecto', contractStart: '2026-05-01', contractEnd: '2026-04-01' }],
+    ['baja IMSS anterior al alta', { ...valid, hireDate: '2026-05-01', imssEndDate: '2026-04-01' }],
+    ['analítica inválida', { ...valid, projectId: 'x' }],
     ['cuerpo vacío', null],
   ])('rechaza: %s', (_caso, body) => {
     expect(parseEmployee(body).ok).toBe(false)
@@ -97,21 +188,107 @@ describe.skipIf(!db)('Administración por HTTP', () => {
     expect(body.find((project: any) => project.code === 'MX0011000')?.name).toBe('GERENCIA')
   })
 
-  it('solo RRHH accede a empleados y departamentos', async () => {
+  it('solo RRHH da de alta y ve departamentos; la lista depende del rol', async () => {
     for (const user of ['dev-colaborador', 'dev-supervisor', 'dev-direccion']) {
-      expect((await call(user, 'GET', '/employees')).status).toBe(403)
       expect((await call(user, 'POST', '/employees', employee('intruso'))).status).toBe(403)
       expect((await call(user, 'GET', '/departments')).status).toBe(403)
     }
+    expect((await call('dev-colaborador', 'GET', '/employees')).status).toBe(403)
     expect((await call('dev-rrhh', 'GET', '/employees')).status).toBe(200)
+    expect((await call('dev-direccion', 'GET', '/employees')).status).toBe(200)
+  })
+
+  it('Mi ficha, el equipo del responsable y Dirección sin datos sensibles', async () => {
+    // Fichas de los usuarios de prueba (las crea el módulo de vacaciones si no existen).
+    await call('dev-supervisor', 'GET', '/absences/mine')
+    await call('dev-colaborador', 'GET', '/absences/mine')
+    const boss = await call('dev-supervisor', 'GET', '/employees/me')
+    expect(boss.status).toBe(200)
+    expect(boss.body.access).toBe('full')
+
+    const sensitive = { rfc: `GOMA850101${tag.slice(-3).toUpperCase()}`, homeAddress: 'Calle de Prueba 1', bloodType: 'A+' }
+    const member = await call('dev-rrhh', 'POST', '/employees', employee('equipo', { supervisorId: boss.body.id, ...sensitive }))
+    const outsider = await call('dev-rrhh', 'POST', '/employees', employee('ajeno'))
+    expect(member.status).toBe(200)
+
+    // El responsable ve a su equipo directo activo, sin datos sensibles; a los demás, no.
+    const team = (await call('dev-supervisor', 'GET', '/employees')).body
+    expect(team.some((item: any) => item.id === member.body.id)).toBe(true)
+    expect(team.some((item: any) => item.id === outsider.body.id)).toBe(false)
+    const limited = await call('dev-supervisor', 'GET', `/employees/${member.body.id}`)
+    expect(limited.status).toBe(200)
+    expect(limited.body).toMatchObject({ access: 'limited', fullName: `equipo ${tag}` })
+    for (const key of ['rfc', 'nss', 'curp', 'homeAddress', 'bloodType', 'maritalStatus', 'criminalRecordLetter']) {
+      expect(limited.body).not.toHaveProperty(key)
+    }
+    expect((await call('dev-supervisor', 'GET', `/employees/${outsider.body.id}`)).status).toBe(403)
+
+    // Dirección ve a todos, sin datos sensibles.
+    const direction = await call('dev-direccion', 'GET', `/employees/${member.body.id}`)
+    expect(direction.body.access).toBe('limited')
+    expect(direction.body).not.toHaveProperty('rfc')
+
+    // El colaborador solo ve su propia ficha, completa.
+    const mine = await call('dev-colaborador', 'GET', '/employees/me')
+    expect(mine.body).toMatchObject({ access: 'full', email: 'colaborador@example.test' })
+    expect(mine.body).toHaveProperty('rfc')
+    expect((await call('dev-colaborador', 'GET', `/employees/${mine.body.id}`)).body.access).toBe('full')
+    expect((await call('dev-colaborador', 'GET', `/employees/${member.body.id}`)).status).toBe(403)
+
+    // RRHH, todo.
+    expect((await call('dev-rrhh', 'GET', `/employees/${member.body.id}`)).body).toMatchObject({ access: 'full', ...sensitive })
   })
 
   it('RRHH da de alta, edita y asigna supervisor', async () => {
     const department = await call('dev-rrhh', 'POST', '/departments', { name: `Operaciones ${tag}` })
     expect(department.status).toBe(200)
 
-    const boss = await call('dev-rrhh', 'POST', '/employees', employee('jefa', { jobTitle: 'Jefa de parque' }))
+    const boss = await call(
+      'dev-rrhh',
+      'POST',
+      '/employees',
+      employee('jefa', { jobTitle: 'Jefa de parque', hireDate: '2019-03-04' }),
+    )
     expect(boss.status).toBe(200)
+    expect(boss.body.hireDate).toBe('2019-03-04')
+
+    // Expediente completo: se guarda, se lee entero por id y la lista no trae datos sensibles.
+    const fileData = {
+      rfc: `RUIA900215${tag.slice(-3).toUpperCase()}`,
+      nss: String(Date.now()).slice(-11).padStart(11, '1'),
+      personalEmail: 'jefa.personal@example.test',
+      personalPhone: '+52 55 1234 5678',
+      maritalStatus: 'casado',
+      emergencyContactName: 'Contacto de Prueba',
+      emergencyContactPhone: '5512345678',
+      bloodType: 'O+',
+      homeAddress: 'Calle Falsa 123, Ciudad de México',
+      sizeShoes: '27',
+      contractType: 'proyecto',
+      contractStart: '2019-03-04',
+      contractEnd: '2027-03-03',
+      criminalRecordLetter: true,
+    }
+    const filed = await call('dev-rrhh', 'PUT', `/employees/${boss.body.id}`, {
+      ...employee('jefa', { jobTitle: 'Jefa de parque', hireDate: '2019-03-04' }),
+      ...fileData,
+    })
+    expect(filed.status).toBe(200)
+    expect(filed.body).toMatchObject(fileData)
+
+    const detail = await call('dev-rrhh', 'GET', `/employees/${boss.body.id}`)
+    expect(detail.body).toMatchObject({ ...fileData, fullName: `jefa ${tag}` })
+    expect((await call('dev-supervisor', 'GET', `/employees/${boss.body.id}`)).status).toBe(403)
+    expect((await call('dev-rrhh', 'GET', '/employees/999999999')).status).toBe(404)
+
+    const listed = (await call('dev-rrhh', 'GET', '/employees')).body.find((item: any) => item.id === boss.body.id)
+    expect(listed).toMatchObject({ fullName: `jefa ${tag}`, hireDate: '2019-03-04' })
+    expect(listed).not.toHaveProperty('rfc')
+    expect(listed).not.toHaveProperty('homeAddress')
+
+    // El RFC no se repite entre empleados.
+    const duplicate = await call('dev-rrhh', 'POST', '/employees', employee('copia', { rfc: fileData.rfc }))
+    expect(duplicate.status).toBe(409)
 
     const worker = await call(
       'dev-rrhh',
@@ -142,6 +319,45 @@ describe.skipIf(!db)('Administración por HTTP', () => {
 
     expect((await call('dev-rrhh', 'PUT', '/employees/999999999', employee('nadie'))).status).toBe(404)
     expect((await call('dev-rrhh', 'PUT', '/employees/abc', employee('nadie'))).status).toBe(404)
+  })
+
+  it('Excel de empleados activos: solo RRHH, con todos los datos y sin las bajas', async () => {
+    const download = (devUser: string) =>
+      fetch(`${baseUrl}/api/employees/export`, { headers: { [DEV_USER_HEADER]: devUser } })
+
+    for (const user of ['dev-colaborador', 'dev-supervisor', 'dev-direccion']) {
+      expect((await download(user)).status).toBe(403)
+    }
+
+    const active = await call('dev-rrhh', 'POST', '/employees', employee('excel', { rfc: `EXCA800101${tag.slice(-3).toUpperCase()}`, hireDate: '2020-05-04' }))
+    const gone = await call('dev-rrhh', 'POST', '/employees', employee('exbaja', { isActive: false }))
+    expect(active.status).toBe(200)
+    expect(gone.status).toBe(200)
+
+    const res = await download('dev-rrhh')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('spreadsheetml')
+    expect(res.headers.get('content-disposition')).toMatch(/attachment; filename="empleados_activos_\d{4}-\d{2}-\d{2}\.xlsx"/)
+
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(await res.arrayBuffer())
+    const sheet = workbook.getWorksheet('Empleados activos')!
+    const headers = (sheet.getRow(1).values as unknown[]).slice(1)
+    expect(headers).toEqual(EXPORT_HEADERS)
+
+    const names: unknown[] = []
+    sheet.eachRow((row, number) => {
+      if (number > 1) names.push(row.getCell(2).value)
+    })
+    expect(names).toContain(`excel ${tag}`)
+    expect(names).not.toContain(`exbaja ${tag}`)
+
+    let found: ExcelJS.Row | undefined
+    sheet.eachRow((row) => {
+      if (row.getCell(2).value === `excel ${tag}`) found = row
+    })
+    expect(found!.getCell(headers.indexOf('RFC') + 1).value).toBe(active.body.rfc)
+    expect(found!.getCell(headers.indexOf('Alta IMSS Revergy') + 1).value).toEqual(new Date(Date.UTC(2020, 4, 4)))
   })
 
   it('festivos: todos los consultan, solo RRHH los cambia', async () => {

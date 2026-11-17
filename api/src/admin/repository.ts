@@ -1,9 +1,11 @@
 import sql from 'mssql'
 import type { DbConfig } from '../config/env.js'
+import { findEmployeeByEmail } from '../db/employees.js'
 import { getPool } from '../db/pool.js'
 import type { EmployeeInput, HolidayInput } from './validation.js'
 
-export interface EmployeeRow {
+/** Lo que muestra la lista: sin datos sensibles. */
+export interface EmployeeSummary {
   id: number
   employeeNumber: string
   fullName: string
@@ -13,8 +15,15 @@ export interface EmployeeRow {
   departmentName: string | null
   supervisorId: number | null
   supervisorName: string | null
+  projectId: number | null
+  projectCode: string | null
+  projectName: string | null
+  hireDate: string | null
   isActive: boolean
 }
+
+/** Expediente completo, con los datos sensibles. Lo filtra `access.ts` según quién consulta. */
+export interface EmployeeRow extends EmployeeSummary, Omit<EmployeeInput, keyof EmployeeSummary> {}
 
 /** Error de datos que la pantalla debe mostrar tal cual (duplicado, referencia inválida...). */
 export class AdminError extends Error {
@@ -49,28 +58,72 @@ async function translating<T>(messages: { unique: string; foreignKey?: string },
   }
 }
 
-const EMPLOYEE_SELECT = `
-  SELECT e.id, e.employee_number AS employeeNumber, e.full_name AS fullName, e.email,
-         e.job_title AS jobTitle, e.department_id AS departmentId, d.name AS departmentName,
-         e.supervisor_id AS supervisorId, s.full_name AS supervisorName, e.is_active AS isActive
+const SUMMARY_COLUMNS = `
+  e.id, e.employee_number AS employeeNumber, e.full_name AS fullName, e.email,
+  e.job_title AS jobTitle, CONVERT(char(10), e.hire_date, 23) AS hireDate,
+  e.department_id AS departmentId, d.name AS departmentName,
+  e.supervisor_id AS supervisorId, s.full_name AS supervisorName,
+  e.project_id AS projectId, p.code AS projectCode, p.name AS projectName, e.is_active AS isActive`
+
+const EMPLOYEE_JOINS = `
   FROM employees AS e
   LEFT JOIN departments AS d ON d.id = e.department_id
-  LEFT JOIN employees AS s ON s.id = e.supervisor_id`
+  LEFT JOIN employees AS s ON s.id = e.supervisor_id
+  LEFT JOIN projects AS p ON p.id = e.project_id`
+
+/**
+ * Campos que RRHH captura: columna, propiedad y tipo. De aquí salen el INSERT, el UPDATE
+ * y las columnas del expediente, para que no se desajusten al añadir un campo.
+ */
+const FIELDS: [column: string, key: keyof EmployeeInput, type: sql.ISqlType | (() => sql.ISqlType), kind?: 'date'][] = [
+  ['employee_number', 'employeeNumber', sql.NVarChar(20)],
+  ['full_name', 'fullName', sql.NVarChar(200)],
+  ['email', 'email', sql.NVarChar(254)],
+  ['job_title', 'jobTitle', sql.NVarChar(100)],
+  ['hire_date', 'hireDate', sql.Date, 'date'],
+  ['imss_end_date', 'imssEndDate', sql.Date, 'date'],
+  ['department_id', 'departmentId', sql.Int],
+  ['supervisor_id', 'supervisorId', sql.Int],
+  ['project_id', 'projectId', sql.Int],
+  ['is_active', 'isActive', sql.Bit],
+  ['rfc', 'rfc', sql.NVarChar(13)],
+  ['nss', 'nss', sql.NVarChar(11)],
+  ['curp', 'curp', sql.NVarChar(18)],
+  ['personal_email', 'personalEmail', sql.NVarChar(254)],
+  ['personal_phone', 'personalPhone', sql.NVarChar(30)],
+  ['work_phone', 'workPhone', sql.NVarChar(30)],
+  ['marital_status', 'maritalStatus', sql.NVarChar(20)],
+  ['emergency_contact_name', 'emergencyContactName', sql.NVarChar(200)],
+  ['emergency_contact_phone', 'emergencyContactPhone', sql.NVarChar(30)],
+  ['blood_type', 'bloodType', sql.NVarChar(3)],
+  ['home_address', 'homeAddress', sql.NVarChar(500)],
+  ['size_pants', 'sizePants', sql.NVarChar(20)],
+  ['size_tshirt', 'sizeTshirt', sql.NVarChar(20)],
+  ['size_shoes', 'sizeShoes', sql.NVarChar(20)],
+  ['size_jacket', 'sizeJacket', sql.NVarChar(20)],
+  ['size_shirt', 'sizeShirt', sql.NVarChar(20)],
+  ['contract_type', 'contractType', sql.NVarChar(20)],
+  ['contract_start', 'contractStart', sql.Date, 'date'],
+  ['contract_end', 'contractEnd', sql.Date, 'date'],
+  ['criminal_record_letter', 'criminalRecordLetter', sql.Bit],
+]
+
+// Columnas del expediente que no están ya en el resumen.
+const SUMMARY_KEYS = new Set<string>(['employeeNumber', 'fullName', 'email', 'jobTitle', 'hireDate', 'departmentId', 'supervisorId', 'projectId', 'isActive'])
+const DETAIL_COLUMNS = FIELDS.filter(([, key]) => !SUMMARY_KEYS.has(key))
+  .map(([column, key, , kind]) => (kind === 'date' ? `CONVERT(char(10), e.${column}, 23) AS ${key}` : `e.${column} AS ${key}`))
+  .join(', ')
+
+const EMPLOYEE_SELECT = `SELECT ${SUMMARY_COLUMNS}, ${DETAIL_COLUMNS} ${EMPLOYEE_JOINS}`
 
 function bindEmployee(request: sql.Request, input: EmployeeInput): sql.Request {
+  for (const [, key, type] of FIELDS) request.input(key, type, input[key])
   return request
-    .input('number', sql.NVarChar(20), input.employeeNumber)
-    .input('name', sql.NVarChar(200), input.fullName)
-    .input('email', sql.NVarChar(254), input.email)
-    .input('jobTitle', sql.NVarChar(100), input.jobTitle)
-    .input('departmentId', sql.Int, input.departmentId)
-    .input('supervisorId', sql.Int, input.supervisorId)
-    .input('isActive', sql.Bit, input.isActive)
 }
 
 const EMPLOYEE_MESSAGES = {
-  unique: 'Ya existe un empleado con ese número o ese correo',
-  foreignKey: 'El departamento o el supervisor indicado no existe',
+  unique: 'Ya existe un empleado con ese número, correo, RFC, NSS o CURP',
+  foreignKey: 'El departamento, el supervisor o la analítica indicada no existe',
 }
 
 export function createAdminRepository(db: DbConfig) {
@@ -103,19 +156,50 @@ export function createAdminRepository(db: DbConfig) {
   }
 
   return {
-    async listEmployees(): Promise<EmployeeRow[]> {
+    /**
+     * Lista para la tabla: solo lo esencial, sin datos sensibles. Con `supervisorId`,
+     * solo su equipo directo activo.
+     */
+    async listEmployees(filter: { supervisorId?: number } = {}): Promise<EmployeeSummary[]> {
       const pool = await getPool(db)
-      const result = await pool.request().query<EmployeeRow>(`${EMPLOYEE_SELECT} ORDER BY e.full_name`)
+      const request = pool.request()
+      let where = ''
+      if (filter.supervisorId !== undefined) {
+        request.input('supervisorId', sql.Int, filter.supervisorId)
+        where = 'WHERE e.supervisor_id = @supervisorId AND e.is_active = 1'
+      }
+      const result = await request.query<EmployeeSummary>(
+        `SELECT ${SUMMARY_COLUMNS} ${EMPLOYEE_JOINS} ${where} ORDER BY e.full_name`,
+      )
       return result.recordset
+    },
+
+    /** Ficha activa del usuario que consulta, enlazada por el correo; no la crea si no existe. */
+    async employeeIdByEmail(email: string): Promise<number | undefined> {
+      return (await findEmployeeByEmail(db, email))?.id
+    },
+
+    /** Expedientes completos de los empleados activos, para la descarga en Excel. */
+    async listActiveFiles(): Promise<EmployeeRow[]> {
+      const pool = await getPool(db)
+      const result = await pool.request().query<EmployeeRow>(`${EMPLOYEE_SELECT} WHERE e.is_active = 1 ORDER BY e.full_name`)
+      return result.recordset
+    },
+
+    /** Expediente completo de un empleado. */
+    async getEmployee(id: number): Promise<EmployeeRow> {
+      const employee = await getEmployee(id)
+      if (!employee) throw new AdminError(404, 'Empleado no encontrado')
+      return employee
     },
 
     async createEmployee(input: EmployeeInput): Promise<EmployeeRow> {
       const pool = await getPool(db)
       const id = await translating(EMPLOYEE_MESSAGES, async () => {
         const result = await bindEmployee(pool.request(), input).query<{ id: number }>(`
-          INSERT INTO employees (employee_number, full_name, email, job_title, department_id, supervisor_id, is_active)
+          INSERT INTO employees (${FIELDS.map(([column]) => column).join(', ')})
           OUTPUT INSERTED.id
-          VALUES (@number, @name, @email, @jobTitle, @departmentId, @supervisorId, @isActive)`)
+          VALUES (${FIELDS.map(([, key]) => `@${key}`).join(', ')})`)
         return result.recordset[0]?.id
       })
       const created = id === undefined ? undefined : await getEmployee(id)
@@ -133,8 +217,7 @@ export function createAdminRepository(db: DbConfig) {
           .input('id', sql.Int, id)
           .query(`
             UPDATE employees
-            SET employee_number = @number, full_name = @name, email = @email, job_title = @jobTitle,
-                department_id = @departmentId, supervisor_id = @supervisorId, is_active = @isActive
+            SET ${FIELDS.map(([column, key]) => `${column} = @${key}`).join(', ')}
             WHERE id = @id`)
         return result.rowsAffected[0] ?? 0
       })

@@ -1,5 +1,6 @@
 import { Download } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { saveFile } from '../../../api/client.ts'
 import {
   addDaysKey,
   formatMinutes,
@@ -23,18 +24,6 @@ function messageOf(cause: unknown): string {
 function todayKey(): string {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-}
-
-/** Entrega el archivo al navegador como una descarga. */
-function saveFile(blob: Blob, name: string): void {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = name
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
 }
 
 // Panel de RRHH: semanas ya aprobadas por el supervisor, listas para nómina. Solo lectura.

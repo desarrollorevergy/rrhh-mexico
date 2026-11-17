@@ -246,10 +246,16 @@ export function createApprovalService(options: ApprovalServiceOptions) {
 
   return {
     /** Crea una solicitud. La llama el módulo dueño del registro (parte de horas, contratación...). */
-    async create(input: { type: string; entityId?: string; requesterId: number }): Promise<number> {
+    async create(input: {
+      type: string
+      entityId?: string
+      requesterId: number
+      /** Cadena distinta de la del tipo, para un caso concreto (ausencia de quien no tiene supervisor). */
+      steps?: ApprovalStep[]
+    }): Promise<number> {
       const def = getRequestType(input.type, includeDemo)
       if (!def) throw new ApprovalError('unknown_type')
-      const state = startApproval(def.steps)
+      const state = startApproval(input.steps ?? def.steps)
 
       const id = await inTransaction(async (tx) => {
         const inserted = await new sql.Request(tx)

@@ -6,6 +6,12 @@ import { HomePage } from './pages/HomePage.tsx'
 import { NotFoundPage } from './pages/NotFoundPage.tsx'
 
 // Las pantallas de cada módulo se descargan al entrar en ellas.
+const AbsencesLayout = lazy(() => import('./pages/absences/AbsencesLayout.tsx'))
+const AbsenceReviewPage = lazy(() => import('./pages/absences/ReviewPage.tsx'))
+const AbsenceBalancesPage = lazy(() => import('./pages/absences/BalancesPage.tsx'))
+const AbsencesPage = lazy(() => import('./pages/absences/AbsencesPage.tsx'))
+const EmployeeFilePage = lazy(() => import('./pages/admin/EmployeeFilePage.tsx'))
+const EmployeeFormPage = lazy(() => import('./pages/admin/EmployeeFormPage.tsx'))
 const AdminPage = lazy(() => import('./pages/admin/AdminPage.tsx'))
 const TimesheetLayout = lazy(() => import('./pages/timesheet/TimesheetLayout.tsx'))
 const TimesheetPage = lazy(() => import('./pages/timesheet/TimesheetPage.tsx'))
@@ -37,10 +43,46 @@ function App() {
               <Route path="nomina" element={<PayrollPage />} />
             </Route>
             <Route
+              path="vacaciones"
+              element={
+                <Suspense fallback={null}>
+                  <AbsencesLayout />
+                </Suspense>
+              }
+            >
+              <Route index element={<AbsencesPage />} />
+              <Route path="solicitudes" element={<AbsenceReviewPage />} />
+              <Route path="saldos" element={<AbsenceBalancesPage />} />
+            </Route>
+            <Route
               path="empleados"
               element={
                 <Suspense fallback={null}>
                   <AdminPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="empleados/nuevo"
+              element={
+                <Suspense fallback={null}>
+                  <EmployeeFormPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="empleados/:id"
+              element={
+                <Suspense fallback={null}>
+                  <EmployeeFilePage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="empleados/:id/editar"
+              element={
+                <Suspense fallback={null}>
+                  <EmployeeFormPage />
                 </Suspense>
               }
             />

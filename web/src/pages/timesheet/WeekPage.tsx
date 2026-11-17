@@ -5,6 +5,7 @@ import { CorrectEntryDialog } from './CorrectEntryDialog.tsx'
 import {
   formatMinutes,
   formatTime,
+  offlineLabel,
   parseDateKey,
   STATUS_LABELS,
   STATUS_STYLES,
@@ -263,6 +264,7 @@ export default function WeekPage() {
                     {day.complete ? formatMinutes(day.total) : '—'}
                     {day.hoursEdited && <span className="font-normal text-muted"> · editado</span>}
                   </p>
+                  {offlineLabel(day) && <p className="text-xs font-medium text-amber-700">{offlineLabel(day)}</p>}
                 </div>
               </div>
 

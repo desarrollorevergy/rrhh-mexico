@@ -36,6 +36,9 @@ export interface TimeEntry {
   correctionNote: string | null
   /** Las horas se corrigieron a mano. */
   hoursEdited: boolean
+  /** Fichado sin conexión: la hora la puso el dispositivo, no el servidor. */
+  clockInOffline: boolean
+  clockOutOffline: boolean
 }
 
 /** Una jornada con sus horas ya repartidas (en minutos). */
@@ -90,7 +93,8 @@ export const ENTRY_COLUMNS = `
   p.code AS projectCode, p.name AS projectName, t.shift_type AS shiftType,
   t.per_diem AS perDiem, t.comment, t.clock_in AS clockIn, t.clock_out AS clockOut, t.status,
   t.reject_reason AS rejectReason, t.correction_sent_at AS correctionSentAt,
-  t.correction_note AS correctionNote, t.hours_edited AS hoursEdited`
+  t.correction_note AS correctionNote, t.hours_edited AS hoursEdited,
+  t.clock_in_offline AS clockInOffline, t.clock_out_offline AS clockOutOffline`
 
 const ENTRY_SELECT = `
   SELECT ${ENTRY_COLUMNS}
@@ -170,6 +174,56 @@ export function parseNote(body: unknown): string | null {
   if (data.note === undefined || data.note === null) return null
   if (typeof data.note !== 'string' || data.note.length > MAX_COMMENT) throw new TimesheetError(400, 'La nota no es válida')
   return data.note.trim() || null
+}
+
+/** Fichajes hechos sin conexión que el dispositivo sube al recuperar la red. */
+export interface OfflineSyncInput {
+  /** Entrada fichada sin conexión, con la hora del dispositivo. */
+  clockIn: (ClockInInput & { at: Date }) | null
+  /** Salida fichada sin conexión, con la hora del dispositivo. */
+  clockOut: { at: Date } | null
+}
+
+/**
+ * Qué pasó con cada fichaje sin conexión:
+ * - saved: guardado (o ya lo estaba: la subida se puede repetir).
+ * - conflict: ya había otro fichaje en el servidor; se conserva ese y se descarta el del dispositivo.
+ */
+export type OfflineOutcome = 'saved' | 'conflict'
+
+export interface OfflineSyncResult {
+  clockIn: OfflineOutcome | null
+  clockOut: OfflineOutcome | null
+  today: TodayView
+}
+
+/** Margen por si el reloj del dispositivo va algo adelantado respecto al del servidor. */
+const FUTURE_TOLERANCE_MS = 5 * 60 * 1000
+
+function parseInstant(value: unknown): Date {
+  const at = typeof value === 'string' && value.length <= 40 ? new Date(value) : new Date(Number.NaN)
+  if (Number.isNaN(at.getTime())) throw new TimesheetError(400, 'La hora del fichaje no es válida')
+  // La base de datos guarda segundos completos.
+  return new Date(Math.floor(at.getTime() / 1000) * 1000)
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null
+}
+
+/** Valida lo que sube el dispositivo al sincronizar. */
+export function parseOfflineSync(body: unknown): OfflineSyncInput {
+  const data = asRecord(body) ?? {}
+  const rawIn = asRecord(data.clockIn)
+  const rawOut = asRecord(data.clockOut)
+  if (!rawIn && !rawOut) throw new TimesheetError(400, 'No hay ningún fichaje que sincronizar')
+
+  const clockIn = rawIn ? { ...parseClockIn(rawIn), at: parseInstant(rawIn.at) } : null
+  const clockOut = rawOut ? { at: parseInstant(rawOut.at) } : null
+  if (clockIn && clockOut && clockOut.at < clockIn.at) {
+    throw new TimesheetError(400, 'La salida no puede ser anterior a la entrada')
+  }
+  return { clockIn, clockOut }
 }
 
 export interface TimesheetServiceOptions {
@@ -430,6 +484,97 @@ export function createTimesheetService(options: TimesheetServiceOptions) {
         .input('comment', sql.NVarChar(1000), comment)
         .query('UPDATE time_entries SET comment = @comment, updated_at = SYSUTCDATETIME() WHERE id = @id')
       return today(employeeId, timeZone, at)
+    },
+
+    /**
+     * Sube los fichajes hechos sin conexión, con la hora del dispositivo, y los marca como tales.
+     * Se puede repetir sin duplicar. Si ya hay otro fichaje en el servidor, se conserva ese.
+     */
+    async syncOffline(employeeId: number, timeZone: string, input: OfflineSyncInput): Promise<OfflineSyncResult> {
+      const serverNow = now()
+      const latest = serverNow.getTime() + FUTURE_TOLERANCE_MS
+      if ([input.clockIn?.at, input.clockOut?.at].some((at) => at !== undefined && at.getTime() > latest)) {
+        throw new TimesheetError(400, 'La hora del fichaje sin conexión está en el futuro: revisa la hora del teléfono')
+      }
+
+      const pool = await getPool(db)
+      const entryOn = async (date: DateKey) => (await entriesByDate(employeeId, [date])).get(date)
+      let clockIn: OfflineOutcome | null = null
+      let clockOut: OfflineOutcome | null = null
+      let entryId: number | null = null
+
+      if (input.clockIn) {
+        const { at, ...fields } = input.clockIn
+        // La jornada activa en el instante en que se fichó, no ahora.
+        const current = await today(employeeId, timeZone, at)
+        const isThisClockIn = (entry: TimeEntry | null | undefined) =>
+          entry?.clockInOffline === true && entry.clockIn.getTime() === at.getTime()
+
+        if (current.entry) {
+          clockIn = isThisClockIn(current.entry) ? 'saved' : 'conflict'
+        } else {
+          // Sin conexión no se pudo comprobar el catálogo: basta con que la analítica exista.
+          const project = await pool
+            .request()
+            .input('id', sql.Int, fields.projectId)
+            .query('SELECT 1 FROM projects WHERE id = @id')
+          if (project.recordset.length === 0) throw new TimesheetError(400, 'La analítica elegida no existe')
+          try {
+            await pool
+              .request()
+              .input('employeeId', sql.Int, employeeId)
+              .input('workDate', sql.Date, current.workDate)
+              .input('projectId', sql.Int, fields.projectId)
+              .input('shiftType', sql.NVarChar(10), fields.shiftType)
+              .input('perDiem', sql.Bit, fields.perDiem)
+              .input('comment', sql.NVarChar(1000), fields.comment)
+              .input('clockIn', sql.DateTime2(0), at)
+              .input('timeZone', sql.NVarChar(64), timeZone)
+              .query(`
+                INSERT INTO time_entries
+                  (employee_id, work_date, project_id, shift_type, per_diem, comment, clock_in, time_zone, clock_in_offline)
+                VALUES (@employeeId, @workDate, @projectId, @shiftType, @perDiem, @comment, @clockIn, @timeZone, 1)`)
+            clockIn = 'saved'
+          } catch (error) {
+            const number = typeof error === 'object' && error !== null && 'number' in error ? error.number : undefined
+            if (typeof number !== 'number' || !UNIQUE_VIOLATION.includes(number)) throw error
+            // Dos subidas a la vez: la otra pudo ser este mismo fichaje.
+            clockIn = isThisClockIn(await entryOn(current.workDate)) ? 'saved' : 'conflict'
+          }
+        }
+        if (clockIn === 'saved') entryId = (await entryOn(current.workDate))?.id ?? null
+      }
+
+      if (input.clockOut) {
+        const { at } = input.clockOut
+        // La salida es de la entrada que sube con ella o, si esa se fichó con conexión, de la jornada activa entonces.
+        const targetId = input.clockIn ? entryId : ((await today(employeeId, timeZone, at)).entry?.id ?? null)
+        if (targetId === null) {
+          clockOut = 'conflict'
+        } else {
+          const updated = await pool
+            .request()
+            .input('id', sql.Int, targetId)
+            .input('clockOut', sql.DateTime2(0), at)
+            .query(`
+              UPDATE time_entries
+              SET clock_out = CASE WHEN @clockOut < clock_in THEN clock_in ELSE @clockOut END,
+                  clock_out_offline = 1, updated_at = SYSUTCDATETIME()
+              WHERE id = @id AND clock_out IS NULL`)
+          if ((updated.rowsAffected[0] ?? 0) > 0) {
+            clockOut = 'saved'
+          } else {
+            const existing = await pool
+              .request()
+              .input('id', sql.Int, targetId)
+              .input('clockOut', sql.DateTime2(0), at)
+              .query('SELECT 1 FROM time_entries WHERE id = @id AND clock_out_offline = 1 AND clock_out = @clockOut')
+            clockOut = existing.recordset.length > 0 ? 'saved' : 'conflict'
+          }
+        }
+      }
+
+      return { clockIn, clockOut, today: await today(employeeId, timeZone, serverNow) }
     },
   }
 }

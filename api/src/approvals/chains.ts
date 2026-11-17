@@ -32,7 +32,20 @@ const REQUEST_TYPES: Record<string, RequestTypeDef> = {
     allowResubmit: false,
     allowCancel: false,
   },
+  // Módulo 08: supervisor y después RRHH, también la incapacidad. El rechazo es definitivo y el
+  // colaborador puede cancelar mientras está pendiente. Quien no tiene supervisor va directo a
+  // RRHH: el módulo crea la solicitud solo con el segundo paso (ver ABSENCE_STEPS_NO_SUPERVISOR).
+  absence_request: {
+    label: 'Solicitud de ausencia',
+    steps: [step(supervisor), step(role('rrhh'))],
+    allowResubmit: false,
+    allowCancel: true,
+  },
 }
+
+export const ABSENCE_TYPE = 'absence_request'
+/** Cadena de una ausencia de quien no tiene supervisor: directa a RRHH. */
+export const ABSENCE_STEPS_NO_SUPERVISOR: ApprovalStep[] = [step(role('rrhh'))]
 
 /** Tipo de PRUEBA, solo en local: recorre un paso simple, uno en paralelo y otro final. */
 export const DEMO_TYPE = 'demo'

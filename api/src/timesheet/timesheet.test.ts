@@ -7,7 +7,7 @@ import { createApprovalService } from '../approvals/service.js'
 import { encodePrincipal, PRINCIPAL_HEADER } from '../auth/principal.js'
 import { closePool, getPool } from '../db/pool.js'
 import { testDb } from '../db/testSetup.js'
-import { createTimesheetService, parseClockIn } from './service.js'
+import { createTimesheetService, parseClockIn, parseOfflineSync } from './service.js'
 import { isValidTimeZone, localParts, resolveActiveShift } from './shift.js'
 
 const MX = 'America/Mexico_City' // UTC−6, sin horario de verano
@@ -222,6 +222,84 @@ describe.skipIf(!db)('Fichaje con base de datos', () => {
       service.clockIn(employeeId, MX, input()),
     ])
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+  })
+
+  describe('fichajes sin conexión', () => {
+    const offlineIn = (local: string) => ({ ...input(), at: mx(local) })
+
+    it('sube entrada y salida con la hora del dispositivo y las marca; repetir no duplica', async () => {
+      clock = mx('2026-12-01T18:00:00')
+      const payload = { clockIn: offlineIn('2026-12-01T08:02:15'), clockOut: { at: mx('2026-12-01T17:00:00') } }
+
+      const first = await service.syncOffline(employeeId, MX, payload)
+      expect(first).toMatchObject({ clockIn: 'saved', clockOut: 'saved' })
+      expect(first.today.entry).toMatchObject({ workDate: '2026-12-01', clockInOffline: true, clockOutOffline: true })
+      expect(first.today.entry?.clockIn.toISOString()).toBe(mx('2026-12-01T08:02:15').toISOString())
+      expect(first.today.entry?.clockOut?.toISOString()).toBe(mx('2026-12-01T17:00:00').toISOString())
+
+      const again = await service.syncOffline(employeeId, MX, payload)
+      expect(again).toMatchObject({ clockIn: 'saved', clockOut: 'saved' })
+      expect(again.today.entry?.id).toBe(first.today.entry?.id)
+    })
+
+    it('la jornada cuenta para el día en que se fichó, aunque se suba días después', async () => {
+      clock = mx('2026-12-05T10:00:00')
+      const result = await service.syncOffline(employeeId, MX, {
+        clockIn: offlineIn('2026-12-02T08:00:00'),
+        clockOut: { at: mx('2026-12-02T16:30:00') },
+      })
+      expect(result).toMatchObject({ clockIn: 'saved', clockOut: 'saved' })
+      const week = await service.week(employeeId, '2026-12-02')
+      expect(week.days.find((day) => day.workDate === '2026-12-02')).toMatchObject({ clockInOffline: true, total: 510 })
+    })
+
+    it('salida sin conexión de una entrada fichada con conexión', async () => {
+      clock = mx('2026-12-07T08:00:00')
+      await service.clockIn(employeeId, MX, input())
+      clock = mx('2026-12-07T19:00:00')
+      const result = await service.syncOffline(employeeId, MX, { clockIn: null, clockOut: { at: mx('2026-12-07T17:10:00') } })
+      expect(result).toMatchObject({ clockIn: null, clockOut: 'saved' })
+      expect(result.today.entry).toMatchObject({ clockInOffline: false, clockOutOffline: true })
+      expect(result.today.entry?.clockOut?.toISOString()).toBe(mx('2026-12-07T17:10:00').toISOString())
+    })
+
+    it('si ya hay un fichaje de ese día en el servidor, se conserva y se descarta el del dispositivo', async () => {
+      clock = mx('2026-12-08T08:00:00')
+      await service.clockIn(employeeId, MX, input())
+      clock = mx('2026-12-08T18:00:00')
+      const result = await service.syncOffline(employeeId, MX, {
+        clockIn: offlineIn('2026-12-08T07:50:00'),
+        clockOut: { at: mx('2026-12-08T16:00:00') },
+      })
+      expect(result).toMatchObject({ clockIn: 'conflict', clockOut: 'conflict' })
+      expect(result.today.entry).toMatchObject({ clockInOffline: false, clockOut: null })
+      expect(result.today.entry?.clockIn.toISOString()).toBe(mx('2026-12-08T08:00:00').toISOString())
+    })
+
+    it('una salida sin conexión no pisa una salida ya fichada', async () => {
+      clock = mx('2026-12-09T08:00:00')
+      await service.clockIn(employeeId, MX, input())
+      clock = mx('2026-12-09T17:00:00')
+      await service.clockOut(employeeId, MX)
+      const result = await service.syncOffline(employeeId, MX, { clockIn: null, clockOut: { at: mx('2026-12-09T16:00:00') } })
+      expect(result.clockOut).toBe('conflict')
+      expect(result.today.entry?.clockOut?.toISOString()).toBe(mx('2026-12-09T17:00:00').toISOString())
+    })
+
+    it('rechaza horas en el futuro y cuerpos no válidos', async () => {
+      clock = mx('2026-12-10T08:00:00')
+      await expect(
+        service.syncOffline(employeeId, MX, { clockIn: offlineIn('2026-12-10T09:00:00'), clockOut: null }),
+      ).rejects.toThrow('futuro')
+      expect(() => parseOfflineSync({})).toThrow('ningún fichaje')
+      expect(() => parseOfflineSync({ clockOut: { at: 'ayer' } })).toThrow('no es válida')
+      expect(() =>
+        parseOfflineSync({
+          clockIn: { projectId: 1, shiftType: 'activa', at: '2026-12-10T10:00:00Z' },
+          clockOut: { at: '2026-12-10T09:00:00Z' },
+        }),
+      ).toThrow('anterior a la entrada')
+    })
   })
 
   describe('por HTTP', () => {

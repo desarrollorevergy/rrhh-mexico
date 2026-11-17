@@ -1,5 +1,7 @@
-import { Router, type RequestHandler } from 'express'
-import { requireRole } from '../auth/middleware.js'
+import { Router, type Request, type RequestHandler, type Response } from 'express'
+import { getAuth, requireRole } from '../auth/middleware.js'
+import { fileAccess, isHrRole, listScope, withoutSensitive } from './access.js'
+import { buildEmployeesWorkbook } from './export.js'
 import { AdminError, type AdminRepository } from './repository.js'
 import { parseEmployee, parseHoliday, parseName, type Parsed } from './validation.js'
 
@@ -17,10 +19,10 @@ function valueOf<T>(parsed: Parsed<T>): T {
 
 /** Ejecuta la acción y responde; los errores de datos salen con su mensaje y código. */
 const handle =
-  (action: (req: Parameters<RequestHandler>[0]) => Promise<unknown>): RequestHandler =>
+  (action: (req: Request, res: Response) => Promise<unknown>): RequestHandler =>
   async (req, res) => {
     try {
-      res.json(await action(req))
+      res.json(await action(req, res))
     } catch (error) {
       if (!(error instanceof AdminError)) throw error
       res.status(error.status).json({ error: error.message })
@@ -44,7 +46,7 @@ export function adminRouter(repository: AdminRepository): Router {
     }),
   )
 
-  // A partir de aquí, solo RRHH: datos de empleados y mantenimiento de catálogos.
+  // A partir de aquí, solo RRHH salvo la lectura de fichas: altas, ediciones y catálogos.
   const rrhh = requireRole('rrhh')
 
   router.post('/holidays', rrhh, handle((req) => repository.createHoliday(valueOf(parseHoliday(req.body)))))
@@ -60,7 +62,52 @@ export function adminRouter(repository: AdminRepository): Router {
   router.get('/departments', rrhh, handle(() => repository.listDepartments()))
   router.post('/departments', rrhh, handle((req) => repository.createDepartment(valueOf(parseName(req.body, 100)))))
 
-  router.get('/employees', rrhh, handle(() => repository.listEmployees()))
+  // Lectura de fichas: cada uno según su rol (ver access.ts). Solo RRHH escribe.
+  router.get(
+    '/employees',
+    handle(async (_req, res) => {
+      const { user, roles } = getAuth(res)
+      const scope = listScope(roles)
+      if (!scope) throw new AdminError(403, 'No tienes acceso a la lista de empleados')
+      if (scope === 'all') return repository.listEmployees()
+      const actorId = await repository.employeeIdByEmail(user.email)
+      return actorId === undefined ? [] : repository.listEmployees({ supervisorId: actorId })
+    }),
+  )
+
+  // Excel con todos los datos de los empleados activos. Solo RRHH: lleva datos sensibles.
+  // Va antes de /employees/:id.
+  router.get('/employees/export', rrhh, async (_req, res) => {
+    const file = await buildEmployeesWorkbook(await repository.listActiveFiles())
+    const today = new Date().toISOString().slice(0, 10)
+    res
+      .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .set('Content-Disposition', `attachment; filename="empleados_activos_${today}.xlsx"`)
+      .set('Cache-Control', 'no-store')
+      .send(file)
+  })
+
+  // «Mi ficha»: la propia, completa y en solo lectura. Va antes de /employees/:id.
+  router.get(
+    '/employees/me',
+    handle(async (_req, res) => {
+      const actorId = await repository.employeeIdByEmail(getAuth(res).user.email)
+      if (actorId === undefined) throw new AdminError(404, 'Aún no tienes ficha de empleado. Consulta con RRHH.')
+      return { ...(await repository.getEmployee(actorId)), access: 'full' }
+    }),
+  )
+
+  router.get(
+    '/employees/:id',
+    handle(async (req, res) => {
+      const { user, roles } = getAuth(res)
+      const employee = await repository.getEmployee(idParam(req.params.id))
+      const actorId = isHrRole(roles) ? undefined : await repository.employeeIdByEmail(user.email)
+      const access = fileAccess(roles, actorId, employee)
+      if (!access) throw new AdminError(403, 'No tienes acceso a esta ficha')
+      return access === 'full' ? { ...employee, access } : { ...withoutSensitive(employee), access }
+    }),
+  )
   router.post('/employees', rrhh, handle((req) => repository.createEmployee(valueOf(parseEmployee(req.body)))))
   router.put(
     '/employees/:id',

@@ -89,9 +89,8 @@ export const MODULES: AppModule[] = [
     description: 'Expediente digital del colaborador, gestionado por RRHH.',
     icon: User,
     path: '/empleados',
-    available: false,
-    // De momento solo la administración básica de RRHH (alta de empleados y festivos).
-    availableFor: ['rrhh'],
+    // Todos ven «Mi ficha»; RRHH, el responsable y Dirección, además, la lista que les toca.
+    available: true,
   },
   {
     num: '08',
@@ -99,7 +98,7 @@ export const MODULES: AppModule[] = [
     description: 'Solicitudes de ausencia con control de saldo de vacaciones.',
     icon: Calendar,
     path: '/vacaciones',
-    available: false,
+    available: true,
   },
   {
     num: '09',

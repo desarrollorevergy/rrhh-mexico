@@ -1,10 +1,33 @@
-import { MessageSquare } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { CloudOff, MessageSquare, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { ApiError, NetworkError } from '../../api/client.ts'
 import { useAuth } from '../../auth/authContext.ts'
 import { CommentDialog } from './CommentDialog.tsx'
 import { ProjectPicker } from './ProjectPicker.tsx'
-import { formatTime, SHIFT_TYPES, timesheetApi, type Project, type ShiftType, type TodayView } from './api.ts'
+import {
+  formatTime,
+  offlineLabel,
+  SHIFT_TYPES,
+  timesheetApi,
+  type Project,
+  type ShiftType,
+  type TodayView,
+} from './api.ts'
+import {
+  cachedProjects,
+  cacheProjects,
+  cacheToday,
+  discardRecord,
+  enqueueClockIn,
+  enqueueClockOut,
+  localToday,
+  queueStatus,
+  setPendingComment,
+  SYNC_EVENT,
+  syncQueue,
+  type SyncReport,
+} from './offline.ts'
 
 const CARD = 'rounded-2xl border border-border bg-surface shadow-sm'
 const LABEL = 'mb-1.5 block text-[15px] font-semibold text-text'
@@ -26,6 +49,16 @@ function initials(name: string): string {
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : 'Ha ocurrido un error'
 }
+
+/** Sin red o con la sesión caducada no se llega al servidor: el fichaje se guarda en el dispositivo. */
+function unreachable(cause: unknown): 'offline' | 'session' | null {
+  if (cause instanceof NetworkError) return 'offline'
+  if (cause instanceof ApiError && cause.status === 401) return 'session'
+  return null
+}
+
+const STORAGE_ERROR = 'No se pudo guardar el fichaje en este dispositivo. Inténtalo de nuevo cuando tengas conexión.'
+const NOTICE = 'rounded-xl border px-3.5 py-2.5 text-sm font-medium'
 
 /** Reloj de pantalla. Es solo informativo: la hora del fichaje la pone el servidor. */
 function useNow(): Date {
@@ -69,37 +102,116 @@ export default function TimesheetPage() {
   // Semanas con días rechazados pendientes de corregir (la más reciente primero).
   const [rejectedWeeks, setRejectedWeeks] = useState<string[]>([])
 
-  useEffect(() => {
-    let cancelled = false
-    Promise.all([timesheetApi.projects(), timesheetApi.today(), timesheetApi.weeks()])
-      .then(([projectList, todayView, weekList]) => {
-        if (cancelled) return
-        setProjects(projectList)
-        setToday(todayView)
-        setRejectedWeeks(weekList.rejectedWeeks)
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setLoadError(messageOf(cause))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  // Sin conexión: por qué no se llega al servidor, y qué hay guardado en el dispositivo.
+  const [link, setLink] = useState<'online' | 'offline' | 'session'>('online')
+  const [queue, setQueue] = useState(() => queueStatus(user.email))
+  const [conflictNotice, setConflictNotice] = useState(false)
+  const [syncing, setSyncing] = useState(false)
 
-  const run = async (action: () => Promise<TodayView>) => {
+  /** Muestra lo que hay en el dispositivo: el fichaje pendiente o la última respuesta del servidor. */
+  const showLocal = useCallback(() => {
+    setQueue(queueStatus(user.email))
+    setToday(localToday(user.email))
+  }, [user.email])
+
+  /** Sube lo pendiente y trae el estado del servidor; sin red, enseña lo guardado en el dispositivo. */
+  const refresh = useCallback(async () => {
+    const report = await syncQueue(user.email)
+    if (report.conflicts > 0) setConflictNotice(true)
+    try {
+      const [projectList, todayView, weekList] = await Promise.all([
+        timesheetApi.projects(),
+        timesheetApi.today(),
+        timesheetApi.weeks(),
+      ])
+      cacheProjects(projectList)
+      cacheToday(user.email, todayView)
+      setProjects(projectList)
+      setRejectedWeeks(weekList.rejectedWeeks)
+      setLink(report.stopped === 'session' ? 'session' : 'online')
+      setLoadError(null)
+    } catch (cause) {
+      const reason = unreachable(cause)
+      if (!reason) {
+        setLoadError(messageOf(cause))
+        return
+      }
+      setLink(reason)
+      setProjects((current) => (current.length > 0 ? current : cachedProjects()))
+    }
+    showLocal()
+  }, [user.email, showLocal])
+
+  useEffect(() => {
+    // `refresh` espera al servidor antes de cambiar el estado.
+    // oxlint-disable-next-line react/set-state-in-effect
+    void refresh()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refresh()
+    }
+    const onOnline = () => void refresh()
+    const onOffline = () => setLink('offline')
+    const onSync = (event: Event) => {
+      if ((event as CustomEvent<SyncReport>).detail.conflicts > 0) setConflictNotice(true)
+    }
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    window.addEventListener(SYNC_EVENT, onSync)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+      window.removeEventListener(SYNC_EVENT, onSync)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [refresh])
+
+  /**
+   * Ejecuta un fichaje. Primero sube lo pendiente, para que el servidor lo reciba en orden; si no
+   * se llega al servidor, `offline` lo guarda en el dispositivo.
+   */
+  const run = async (online: () => Promise<TodayView>, offline?: () => boolean) => {
     setSaving(true)
     setActionError(null)
     try {
-      setToday(await action())
+      const report = await syncQueue(user.email)
+      if (report.conflicts > 0) setConflictNotice(true)
+      if (report.remaining > 0 && offline) {
+        // Queda algo sin subir: este fichaje se pone a la cola detrás.
+        if (!offline()) throw new Error(STORAGE_ERROR)
+        if (report.stopped === 'offline' || report.stopped === 'session') setLink(report.stopped)
+        showLocal()
+        return true
+      }
+      const view = await online()
+      cacheToday(user.email, view)
+      setLink('online')
+      showLocal()
       return true
     } catch (cause) {
+      const reason = unreachable(cause)
+      if (reason) {
+        setLink(reason)
+        if (offline?.()) {
+          showLocal()
+          return true
+        }
+        setActionError(offline ? STORAGE_ERROR : messageOf(cause))
+        return false
+      }
       setActionError(messageOf(cause))
       // El estado real puede haber cambiado (por ejemplo, fichado desde otro dispositivo).
-      timesheetApi.today().then(setToday, () => undefined)
+      void refresh()
       return false
     } finally {
       setSaving(false)
     }
+  }
+
+  const syncNow = async () => {
+    setSyncing(true)
+    await refresh()
+    setSyncing(false)
   }
 
   if (loadError) {
@@ -120,7 +232,11 @@ export default function TimesheetPage() {
   const canClockIn = projectId !== null && shiftType !== '' && !saving
 
   const saveComment = async (text: string) => {
-    if (entry) {
+    if (entry?.id === 0) {
+      // La entrada aún está solo en el dispositivo: el comentario se sube con ella.
+      if (!setPendingComment(user.email, text)) return
+      showLocal()
+    } else if (entry) {
       if (!(await run(() => timesheetApi.setComment(text)))) return
     } else {
       setDraftComment(text)
@@ -148,6 +264,79 @@ export default function TimesheetPage() {
         >
           Tienes días rechazados por corregir ›
         </Link>
+      )}
+
+      {link === 'offline' && (
+        <p role="status" className={`${NOTICE} flex items-center gap-2 border-amber-300 bg-amber-50 text-amber-900`}>
+          <CloudOff size={16} aria-hidden="true" className="shrink-0" />
+          Sin conexión. El fichaje se guarda en este dispositivo y se sube al recuperar la red.
+        </p>
+      )}
+
+      {link === 'session' && (
+        <div role="alert" className={`${NOTICE} border-amber-300 bg-amber-50 text-amber-900`}>
+          <p>Tu sesión ha caducado. Vuelve a entrar para subir tus fichajes; mientras tanto se guardan en este dispositivo.</p>
+          <button
+            type="button"
+            // Recargar la página completa hace que App Service pida iniciar sesión de nuevo.
+            onClick={() => window.location.reload()}
+            className="mt-2 h-9 cursor-pointer rounded-lg bg-brand-blue px-4 text-sm font-semibold text-white"
+          >
+            Volver a entrar
+          </button>
+        </div>
+      )}
+
+      {queue.pending > 0 && (
+        <div role="status" className={`${NOTICE} flex items-center justify-between gap-3 border-border bg-surface text-text`}>
+          <span>
+            {queue.pending === 1 ? '1 fichaje pendiente de subir' : `${queue.pending} fichajes pendientes de subir`}
+          </span>
+          <button
+            type="button"
+            disabled={syncing || saving}
+            onClick={() => void syncNow()}
+            className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-accent px-3 text-sm font-semibold text-accent disabled:opacity-60"
+          >
+            <RefreshCw size={14} aria-hidden="true" className={syncing ? 'animate-spin' : ''} />
+            {syncing ? 'Subiendo…' : 'Subir ahora'}
+          </button>
+        </div>
+      )}
+
+      {queue.failed.map((record) => (
+        <div key={record.id} role="alert" className={`${NOTICE} border-red-300 bg-red-50 text-red-800`}>
+          <p>
+            No se pudo subir el fichaje del {new Date(`${record.workDate}T00:00:00`).toLocaleDateString('es-MX')}:{' '}
+            {record.error}. Avisa a tu supervisor para que lo registre.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              discardRecord(user.email, record.id)
+              showLocal()
+            }}
+            className="mt-2 h-9 cursor-pointer rounded-lg border border-red-400 px-4 text-sm font-semibold"
+          >
+            Descartar
+          </button>
+        </div>
+      ))}
+
+      {conflictNotice && (
+        <div role="alert" className={`${NOTICE} border-amber-300 bg-amber-50 text-amber-900`}>
+          <p>
+            Ya había un fichaje de ese día en el servidor: se conservó ese y se descartó el guardado en este
+            dispositivo. Revisa «Mi Semana».
+          </p>
+          <button
+            type="button"
+            onClick={() => setConflictNotice(false)}
+            className="mt-2 h-9 cursor-pointer rounded-lg border border-amber-400 px-4 text-sm font-semibold"
+          >
+            Entendido
+          </button>
+        </div>
       )}
 
       <Clock />
@@ -221,7 +410,19 @@ export default function TimesheetPage() {
                 disabled={!canClockIn}
                 onClick={() => {
                   if (projectId === null || shiftType === '') return
-                  void run(() => timesheetApi.clockIn({ projectId, shiftType, perDiem, comment: draftComment }))
+                  const project = projects.find((item) => item.id === projectId)
+                  void run(
+                    () => timesheetApi.clockIn({ projectId, shiftType, perDiem, comment: draftComment }),
+                    () =>
+                      enqueueClockIn(user.email, {
+                        projectId,
+                        projectCode: project?.code ?? '',
+                        projectName: project?.name ?? null,
+                        shiftType,
+                        perDiem,
+                        comment: draftComment,
+                      }),
+                  )
                 }}
                 className={`${CLOCK_BUTTON} bg-brand-green`}
               >
@@ -239,7 +440,12 @@ export default function TimesheetPage() {
                 id="btn-clock-out"
                 type="button"
                 disabled={saving}
-                onClick={() => void run(() => timesheetApi.clockOut())}
+                onClick={() =>
+                  void run(
+                    () => timesheetApi.clockOut(),
+                    () => enqueueClockOut(user.email, entry),
+                  )
+                }
                 className={`${CLOCK_BUTTON} bg-brand-blue`}
               >
                 {saving ? 'Guardando…' : 'Fichar salida'}
@@ -259,6 +465,14 @@ export default function TimesheetPage() {
                 Entrada {formatTime(entry.clockIn)} · Salida {formatTime(entry.clockOut)}
               </p>
             </>
+          )}
+
+          {entry && offlineLabel(entry) && (
+            <p className="mt-1.5 flex items-center justify-center gap-1 text-[13px] font-medium text-amber-700">
+              <CloudOff size={13} aria-hidden="true" />
+              {offlineLabel(entry)}
+              {entry.id === 0 || (entry.clockOutOffline && queue.pending > 0) ? ' · pendiente de subir' : ''}
+            </p>
           )}
 
           {actionError && (

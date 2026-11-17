@@ -28,6 +28,25 @@ export interface TimeEntry {
   correctionNote: string | null
   /** Las horas se corrigieron a mano. */
   hoursEdited: boolean
+  /** Fichado sin conexión: la hora la puso el dispositivo, no el servidor. */
+  clockInOffline: boolean
+  clockOutOffline: boolean
+}
+
+/** Marca de una jornada fichada (en todo o en parte) sin conexión; null si no lo fue. */
+export function offlineLabel(entry: Pick<TimeEntry, 'clockInOffline' | 'clockOutOffline'>): string | null {
+  if (entry.clockInOffline && entry.clockOutOffline) return 'Fichado sin conexión'
+  if (entry.clockInOffline) return 'Entrada sin conexión'
+  if (entry.clockOutOffline) return 'Salida sin conexión'
+  return null
+}
+
+/** Qué pasó con un fichaje sin conexión al subirlo: guardado, o descartado porque ya había otro. */
+export type OfflineOutcome = 'saved' | 'conflict'
+
+export interface OfflineSyncPayload {
+  clockIn: { at: string; projectId: number; shiftType: ShiftType; perDiem: boolean; comment: string } | null
+  clockOut: { at: string } | null
 }
 
 export interface TodayView {
@@ -155,6 +174,12 @@ export const timesheetApi = {
   clockIn: (input: { projectId: number; shiftType: ShiftType; perDiem: boolean; comment: string }) =>
     apiPost<TodayView>('/api/timesheet/clock-in', { ...input, timeZone: deviceTimeZone() }),
   clockOut: () => apiPost<TodayView>('/api/timesheet/clock-out', { timeZone: deviceTimeZone() }),
+  /** Sube un fichaje hecho sin conexión, con la hora del dispositivo. */
+  sync: (payload: OfflineSyncPayload) =>
+    apiPost<{ clockIn: OfflineOutcome | null; clockOut: OfflineOutcome | null; today: TodayView }>(
+      '/api/timesheet/sync',
+      { ...payload, timeZone: deviceTimeZone() },
+    ),
   setComment: (comment: string) =>
     apiPut<TodayView>('/api/timesheet/today/comment', { comment, timeZone: deviceTimeZone() }),
   weeks: () =>
